@@ -7,7 +7,7 @@
 
 ## About This Document
 
-This plan was produced after completing FSM-Apo. It supersedes
+This plan was produced after completing FSM-App. It supersedes
 Deployment Plan 1. Every feature is covered: including those absent from
 Plan 1 (Healing Spells tab, HOPE checkbox, sanity preview, dropdown madness/
 wound selection, animation systems, custom popups, session log coloring, etc.).
@@ -1588,6 +1588,6 @@ Follow this sequence to maintain a runnable app at every step:
 
 ---
 
-*End of Deployment Plan 2 — covers every feature in FSM-6.py.*
-*Source of truth: `C:\Users\Tom\Desktop\FSM\FSM-Desktop\FSM-6.py` (4831 lines)*
+*End of Deployment Plan 2 *
+
 

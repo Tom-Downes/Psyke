@@ -5,7 +5,8 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+
     steps:
       - uses: actions/checkout@v4
 
@@ -16,20 +17,34 @@ jobs:
       - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y zip unzip openjdk-17-jdk \
-            autoconf libtool pkg-config zlib1g-dev libncurses5-dev \
-            libffi-dev libssl-dev libsqlite3-dev libjpeg-dev libfreetype6-dev
+          sudo apt-get install -y --no-install-recommends \
+            build-essential ccache git zip unzip openjdk-17-jdk \
+            autoconf libtool pkg-config \
+            zlib1g-dev libffi-dev libssl-dev libsqlite3-dev \
+            libjpeg-dev libfreetype6-dev \
+            libbz2-dev liblzma-dev libreadline-dev \
+            libncurses5-dev libncursesw5-dev \
+            libgl1-mesa-dev libgles2-mesa-dev
 
-      - name: Install buildozer
+      - name: Install buildozer (pinned)
         run: |
           python -m pip install --upgrade pip
-          pip install buildozer cython
+          pip install "Cython<3" pexpect "buildozer==1.5.0"
 
-      - name: Build debug APK
+      - name: Build debug APK (capture log)
         run: |
-          buildozer -v android debug
+          set -o pipefail
+          buildozer -v android debug 2>&1 | tee buildozer.log
+
+      - name: Upload build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs
+          path: buildozer.log
 
       - name: Upload APK
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: apk

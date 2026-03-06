@@ -7,6 +7,10 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
+    defaults:
+      run:
+        working-directory: FSM-Android-V2
+
     steps:
       - uses: actions/checkout@v4
 
@@ -47,11 +51,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-logs
-          path: buildozer.log
+          path: FSM-Android-V2/buildozer.log
 
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: apk
-          path: bin/*.apk
+          path: FSM-Android-V2/bin/*.apk

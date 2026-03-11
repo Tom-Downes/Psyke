@@ -3,6 +3,9 @@ name: Build APK (Psyke)
 on:
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 jobs:
   build:
     runs-on: ubuntu-22.04
@@ -55,4 +58,3 @@ jobs:
         with:
           name: apk
           path: bin/*.apk
-

@@ -10,21 +10,12 @@ jobs:
   build:
     runs-on: ubuntu-22.04
 
+    defaults:
+      run:
+        working-directory: Psyke-Android-V1
+
     steps:
       - uses: actions/checkout@v4
-
-      - name: Resolve project dir
-        shell: bash
-        run: |
-          set -euo pipefail
-          SPEC_PATH="$(find . -maxdepth 4 -type f -name buildozer.spec | head -n 1 || true)"
-          if [ -z "$SPEC_PATH" ]; then
-            echo "No buildozer.spec found in repository"
-            exit 1
-          fi
-          PROJECT_DIR="$(dirname "$SPEC_PATH")"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Using PROJECT_DIR=$PROJECT_DIR"
 
       - uses: actions/setup-python@v5
         with:
@@ -54,7 +45,6 @@ jobs:
           pip install "Cython<3" pexpect "buildozer==1.5.0"
 
       - name: Build debug APK (capture log)
-        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -o pipefail
           buildozer -v android debug 2>&1 | tee buildozer.log
@@ -64,11 +54,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: build-logs
-          path: ${{ env.PROJECT_DIR }}/buildozer.log
+          path: Psyke-Android-V1/buildozer.log
 
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: apk
-          path: ${{ env.PROJECT_DIR }}/bin/*.apk
+          path: Psyke-Android-V1/bin/*.apk

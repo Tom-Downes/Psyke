@@ -1,4 +1,4 @@
-﻿name: Release APK (Psyke V5)
+name: Release APK (Psyke V5)
 
 on:
   push:

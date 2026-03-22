@@ -1,4 +1,4 @@
-﻿[app]
+[app]
 
 # Application title and package
 title = Psyke

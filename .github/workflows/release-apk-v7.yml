@@ -113,10 +113,10 @@ jobs:
           print(f"Stamped version={version} numeric={numeric} sha={sha} run={run_no}")
           PY
 
-      - name: Build release APK
+      - name: Build APK
         run: |
           set -o pipefail
-          buildozer -v android release 2>&1 | tee buildozer-apk.log
+          buildozer -v android debug 2>&1 | tee buildozer-apk.log
 
       - name: Upload build log
         if: always()

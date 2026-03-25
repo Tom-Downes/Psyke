@@ -35,7 +35,9 @@ match = re.search(r"(?m)^version\s*=\s*(.+?)\s*$", spec)
 default_version = match.group(1).strip() if match else "7.0.0"
 version = (os.environ.get("INPUT_VERSION") or "").strip() or default_version
 run_no = int(os.environ.get("GITHUB_RUN_NUMBER", "0") or "0")
-numeric = 70000 + run_no
+# Use UTC epoch seconds so each CI build gets a fresh Play-safe versionCode.
+# (Valid until 2038 under Android's signed-int limit.)
+numeric = int(dt.datetime.now(dt.timezone.utc).timestamp())
 
 def upsert(text: str, key: str, value: str) -> str:
     pattern = rf"(?m)^{re.escape(key)}\s*=.*$"

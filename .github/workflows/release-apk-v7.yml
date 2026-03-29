@@ -1,12 +1,6 @@
 name: Release APK (Psyke V7)
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/release-apk-v7.yml"
-      - "Psyke-Android-V7/**"
   workflow_dispatch:
     inputs:
       version:
@@ -16,6 +10,10 @@ on:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
 
 jobs:
   build-and-release:

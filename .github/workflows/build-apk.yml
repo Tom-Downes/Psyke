@@ -3,10 +3,21 @@ name: Build APK
 on:
   push:
     branches: ["main"]
+    paths-ignore:
+      - "Psyke-Android-V1/**"
+      - "Psyke-Android-V4/**"
+      - "Psyke-Android-V5/**"
+      - "Psyke-Android-V6/**"
+      - "Psyke-Android-V7/**"
+      - "Psyke-Android-V8/**"
   workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
 
 jobs:
   build:

@@ -17,6 +17,10 @@ on:
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
+concurrency:
+  group: android-aab
+  cancel-in-progress: true
+
 jobs:
   build-aab:
     runs-on: ubuntu-22.04

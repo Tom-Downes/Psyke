@@ -3,10 +3,17 @@ name: Build APK (Psyke)
 on:
   push:
     branches: ["main"]
+    paths:
+      - ".github/workflows/build-apk-psyke.yml"
+      - "Psyke-Android-V1/**"
   workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
 
 jobs:
   build:

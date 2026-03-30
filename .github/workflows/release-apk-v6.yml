@@ -127,4 +127,3 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: Psyke-Android-V6/bin/*.apk
-          generate_release_notes: true

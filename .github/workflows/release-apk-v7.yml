@@ -145,4 +145,3 @@ jobs:
           tag_name: v${{ github.event.inputs.version || '7.0.0' }}
           name: Psyke V7 ${{ github.event.inputs.version || '7.0.0' }}
           files: Psyke-Android-V7/bin/*.apk
-          generate_release_notes: true

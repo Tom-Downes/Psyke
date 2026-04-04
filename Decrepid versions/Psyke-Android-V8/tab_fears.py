@@ -31,7 +31,7 @@ from models import (
 from ui_utils import (
     BorderCard, Divider, HopeButton,
     SectionLabel, CaptionLabel,
-    ListItem, ExpandableSection, DescriptionCard, PageDot, themed_field,
+    ListItem, ExpandableSection, DescriptionCard, DualMaskIndicator, themed_field,
     populate_rules_section
 )
 import theme as T
@@ -62,7 +62,11 @@ class FearsTab(MDBoxLayout):
         self._page = 0   # 0 = Main, 1 = Severity & Desens
 
         # Page indicator bar
-        self.add_widget(self._build_page_indicator())
+        self._indicator = DualMaskIndicator(
+            left_title="Fear", right_title="Fear Effects",
+            active_color=list(T.k(T.GOLD)),
+            size_hint_y=None, height=dp(34))
+        self.add_widget(self._indicator)
 
         # Content area â€” holds exactly one ScrollView at a time
         self._content_area = MDBoxLayout(orientation="vertical")
@@ -149,57 +153,10 @@ class FearsTab(MDBoxLayout):
 
         # Show page 0 on launch
         self._content_area.add_widget(self._sv0)
-        self._update_indicator()
+        self._indicator.progress = 0.0
 
     # â”€â”€ Page indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-    def _build_page_indicator(self) -> MDBoxLayout:
-        row = MDBoxLayout(
-            size_hint_y=None, height=dp(26),
-            spacing=dp(4), padding=[dp(10), dp(2), dp(10), dp(2)])
-
-        with row.canvas.before:
-            Color(*T.k(T.GOLD, 0.12))
-            self._ind_bg = Rectangle()
-        row.bind(pos=lambda w, _: setattr(self._ind_bg, 'pos', w.pos),
-                 size=lambda w, _: setattr(self._ind_bg, 'size', w.size))
-
-        self._ind_lbl0 = MDLabel(
-            text="Fear", halign="right",
-            theme_text_color="Custom", text_color=T.k(T.GOLD),
-            font_style="Caption", bold=True,
-            size_hint_x=0.44)
-
-        self._dot0 = PageDot(color_hex=T.GOLD)
-        self._dot1 = PageDot(color_hex=T.TEXT_DIM)
-
-        self._ind_lbl1 = MDLabel(
-            text="Fear Effects", halign="left",
-            theme_text_color="Custom", text_color=T.k(T.TEXT_DIM),
-            font_style="Caption", bold=False,
-            size_hint_x=0.44)
-
-        row.add_widget(self._ind_lbl0)
-        row.add_widget(self._dot0)
-        row.add_widget(self._dot1)
-        row.add_widget(self._ind_lbl1)
-        return row
-
-    def _update_indicator(self):
-        if self._page == 0:
-            self._dot0.set_color(T.GOLD)
-            self._dot1.set_color(T.TEXT_DIM)
-            self._ind_lbl0.bold       = True
-            self._ind_lbl0.text_color = T.k(T.GOLD)
-            self._ind_lbl1.bold       = False
-            self._ind_lbl1.text_color = T.k(T.TEXT_DIM)
-        else:
-            self._dot0.set_color(T.TEXT_DIM)
-            self._dot1.set_color(T.GOLD)
-            self._ind_lbl0.bold       = False
-            self._ind_lbl0.text_color = T.k(T.TEXT_DIM)
-            self._ind_lbl1.bold       = True
-            self._ind_lbl1.text_color = T.k(T.GOLD)
 
     def _update_effects_banner(self):
         """Refresh the fear name + severity/desens badges on the effects page."""
@@ -226,7 +183,7 @@ class FearsTab(MDBoxLayout):
         self._page = page
         self._content_area.clear_widgets()
         self._content_area.add_widget(self._sv0 if page == 0 else self._sv1)
-        self._update_indicator()
+        self._indicator.progress = float(page)
         if page == 1:
             self._update_effects_banner()
             # Expand the current severity and desens panels immediately
@@ -240,17 +197,31 @@ class FearsTab(MDBoxLayout):
             touch.ud['fears_swipe_start'] = (touch.x, touch.y)
         return super().on_touch_down(touch)
 
+    def on_touch_move(self, touch):
+        start = touch.ud.get('fears_swipe_start')
+        if start:
+            dx = touch.x - start[0]
+            dy = touch.y - start[1]
+            if abs(dx) > abs(dy):
+                raw_p = float(self._page) - dx / dp(200)
+                self._indicator.progress = max(0.0, min(1.0, raw_p))
+        return super().on_touch_move(touch)
+
     def on_touch_up(self, touch):
         start = touch.ud.get('fears_swipe_start')
         if start:
             dx = touch.x - start[0]
             dy = touch.y - start[1]
-            # Horizontal swipe: must be > 50dp and clearly more horizontal than vertical
+            committed = False
             if abs(dx) > dp(50) and abs(dx) > abs(dy) * 1.5:
-                if dx < 0:
+                if dx < 0 and self._page == 0:
                     self._go_page(1)
-                elif dx > 0:
+                    committed = True
+                elif dx > 0 and self._page == 1:
                     self._go_page(0)
+                    committed = True
+            if not committed:
+                self._indicator.progress = float(self._page)
         return super().on_touch_up(touch)
 
     # â”€â”€ Build: Encounter Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

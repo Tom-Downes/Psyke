@@ -31,7 +31,7 @@ from models import (
 from ui_utils import (
     BorderCard, AccentCard, DescriptionCard, Divider, HopeButton,
     SectionLabel, CaptionLabel,
-    ListItem, ExpandableSection, themed_field, PickerButton, PageDot,
+    ListItem, ExpandableSection, themed_field, PickerButton, DualMaskIndicator,
     populate_rules_section
 )
 import theme as T
@@ -64,7 +64,11 @@ class WoundsTab(MDBoxLayout):
         # â”€â”€ Page state â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         self._page = 0  # 0 = Encounter & Wounds, 1 = Add Wound
 
-        self.add_widget(self._build_page_indicator())
+        self._indicator = DualMaskIndicator(
+            left_title="Wounds", right_title="Add Wound",
+            active_color=list(T.k(T.BLOOD)),
+            size_hint_y=None, height=dp(34))
+        self.add_widget(self._indicator)
 
         self._content_area = MDBoxLayout(orientation="vertical")
         self.add_widget(self._content_area)
@@ -91,52 +95,9 @@ class WoundsTab(MDBoxLayout):
         self._sv1.add_widget(p1)
 
         self._content_area.add_widget(self._sv0)
-        self._update_indicator()
+        self._indicator.progress = 0.0
 
     # â”€â”€ Page indicator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-    def _build_page_indicator(self) -> MDBoxLayout:
-        row = MDBoxLayout(
-            size_hint_y=None, height=dp(26),
-            spacing=dp(4), padding=[dp(10), dp(2), dp(10), dp(2)])
-        with row.canvas.before:
-            Color(*T.k(T.BLOOD, 0.12))
-            self._ind_bg = Rectangle()
-        row.bind(pos=lambda w, _: setattr(self._ind_bg, 'pos', w.pos),
-                 size=lambda w, _: setattr(self._ind_bg, 'size', w.size))
-
-        self._ind_lbl0 = MDLabel(
-            text="Wounds", halign="right",
-            theme_text_color="Custom", text_color=T.k(T.BLOOD),
-            font_style="Caption", bold=True, size_hint_x=0.44)
-        self._dot0 = PageDot(color_hex=T.BLOOD)
-        self._dot1 = PageDot(color_hex=T.TEXT_DIM)
-        self._ind_lbl1 = MDLabel(
-            text="Add Wound", halign="left",
-            theme_text_color="Custom", text_color=T.k(T.TEXT_DIM),
-            font_style="Caption", bold=False, size_hint_x=0.44)
-
-        row.add_widget(self._ind_lbl0)
-        row.add_widget(self._dot0)
-        row.add_widget(self._dot1)
-        row.add_widget(self._ind_lbl1)
-        return row
-
-    def _update_indicator(self):
-        if self._page == 0:
-            self._dot0.set_color(T.BLOOD)
-            self._dot1.set_color(T.TEXT_DIM)
-            self._ind_lbl0.bold       = True
-            self._ind_lbl0.text_color = T.k(T.BLOOD)
-            self._ind_lbl1.bold       = False
-            self._ind_lbl1.text_color = T.k(T.TEXT_DIM)
-        else:
-            self._dot0.set_color(T.TEXT_DIM)
-            self._dot1.set_color(T.BLOOD_LT)
-            self._ind_lbl0.bold       = False
-            self._ind_lbl0.text_color = T.k(T.TEXT_DIM)
-            self._ind_lbl1.bold       = True
-            self._ind_lbl1.text_color = T.k(T.BLOOD_LT)
 
     def _reset_add_page(self):
         """Reset all add-page picker buttons and preview panels to default."""
@@ -156,7 +117,7 @@ class WoundsTab(MDBoxLayout):
         self._clear_wound_details()
         self._content_area.clear_widgets()
         self._content_area.add_widget(self._sv0 if page == 0 else self._sv1)
-        self._update_indicator()
+        self._indicator.progress = float(page)
 
     # â”€â”€ Swipe detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
@@ -165,16 +126,31 @@ class WoundsTab(MDBoxLayout):
             touch.ud['wounds_swipe_start'] = (touch.x, touch.y)
         return super().on_touch_down(touch)
 
+    def on_touch_move(self, touch):
+        start = touch.ud.get('wounds_swipe_start')
+        if start:
+            dx = touch.x - start[0]
+            dy = touch.y - start[1]
+            if abs(dx) > abs(dy):
+                raw_p = float(self._page) - dx / dp(200)
+                self._indicator.progress = max(0.0, min(1.0, raw_p))
+        return super().on_touch_move(touch)
+
     def on_touch_up(self, touch):
         start = touch.ud.get('wounds_swipe_start')
         if start:
             dx = touch.x - start[0]
             dy = touch.y - start[1]
+            committed = False
             if abs(dx) > dp(50) and abs(dx) > abs(dy) * 1.5:
-                if dx < 0:
+                if dx < 0 and self._page == 0:
                     self._go_page(1)
-                elif dx > 0:
+                    committed = True
+                elif dx > 0 and self._page == 1:
                     self._go_page(0)
+                    committed = True
+            if not committed:
+                self._indicator.progress = float(self._page)
         return super().on_touch_up(touch)
 
     # â”€â”€ Build: Encounter Card â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€

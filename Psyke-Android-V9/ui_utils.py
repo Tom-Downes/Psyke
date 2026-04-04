@@ -6,10 +6,13 @@ using correct Kivy layout patterns (no MDCard orientation anti-patterns).
 from __future__ import annotations
 
 import re as _re
+from kivy.animation import Animation
 from kivy.clock import Clock
-from kivy.graphics import Color, Ellipse, Line, Rectangle, RoundedRectangle
-from kivy.metrics import dp
-from kivy.properties import BooleanProperty, ListProperty, StringProperty
+from kivy.graphics import (Color, Ellipse, Line, Rectangle, RoundedRectangle,
+                           ScissorPush, ScissorPop)
+from kivy.core.text import Label as CoreLabel
+from kivy.metrics import dp, sp
+from kivy.properties import BooleanProperty, ListProperty, NumericProperty, StringProperty
 from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.widget import Widget
 
@@ -122,7 +125,7 @@ class DescriptionCard(MDBoxLayout):
     No left-bar sliver — uses a full border instead.
     """
 
-    def __init__(self, title: str, color_hex: str = T.BORDER, **kwargs):
+    def __init__(self, title: str = "", color_hex: str = T.BORDER, **kwargs):
         kwargs.setdefault("orientation", "vertical")
         kwargs.setdefault("spacing", dp(6))
         kwargs.setdefault("padding", [dp(10), dp(8), dp(10), dp(10)])
@@ -135,12 +138,8 @@ class DescriptionCard(MDBoxLayout):
             Color(*T.k(T.BG_INSET))
             self._bg = RoundedRectangle(radius=[dp(4)])
         self.bind(pos=self._upd, size=self._upd)
-        self._title_lbl = MDLabel(
-            text=title, bold=True,
-            theme_text_color="Custom", text_color=T.k(color_hex),
-            font_style="Caption",
-            size_hint_y=None, height=dp(20))
-        self.add_widget(self._title_lbl)
+        self._title_lbl = None
+        self.set_title(title)
 
     def _upd(self, *_):
         self._bd.pos  = self.pos
@@ -150,10 +149,24 @@ class DescriptionCard(MDBoxLayout):
 
     def set_title(self, title: str, color_hex: str = None):
         """Update the title text and optionally redraw with a new color."""
-        self._title_lbl.text = title
+        title = title or ""
+        if title:
+            if self._title_lbl is None:
+                self._title_lbl = MDLabel(
+                    text=title, bold=True,
+                    theme_text_color="Custom", text_color=T.k(self._ch),
+                    font_style="Caption",
+                    size_hint_y=None, height=dp(20))
+                self.add_widget(self._title_lbl, index=0)
+            else:
+                self._title_lbl.text = title
+        elif self._title_lbl is not None:
+            self.remove_widget(self._title_lbl)
+            self._title_lbl = None
         if color_hex and color_hex != self._ch:
             self._ch = color_hex
-            self._title_lbl.text_color = T.k(color_hex)
+            if self._title_lbl is not None:
+                self._title_lbl.text_color = T.k(color_hex)
             self.canvas.before.clear()
             with self.canvas.before:
                 Color(*T.k(color_hex, 0.35))
@@ -490,9 +503,693 @@ class ListItem(BoxLayout):
 
 
 # ────────────────────────────────────────────────────────────────────────────
+# FillSwipeTitle
+# Renders text as two overlapping layers: dim-white base + colour fill that
+# sweeps left-to-right as fill_t goes 0 → 1.  Used by ExpandingEffectCard.
+# ────────────────────────────────────────────────────────────────────────────
+
+class FillSwipeTitle(Widget):
+    """Left-to-right colour fill over text driven by fill_t (0 → 1)."""
+    text      = StringProperty("")
+    fill_t    = NumericProperty(0.0)
+    fill_rgba = ListProperty(list(T.k(T.PURPLE)))
+
+    def __init__(self, **kwargs):
+        kwargs.setdefault("size_hint_y", None)
+        kwargs.setdefault("height", dp(24))
+        super().__init__(**kwargs)
+        self._base_label  = None
+        self._fill_label  = None
+        self._text_width  = 0
+        self._text_height = 0
+
+        with self.canvas:
+            Color(1, 1, 1, 1)
+            self._base_rect = Rectangle()
+            Color(1, 1, 1, 1)
+            self._fill_rect = Rectangle()
+
+        self.bind(pos=self._redraw, size=self._redraw,
+                  text=self._redraw, fill_t=self._redraw, fill_rgba=self._redraw)
+        self._redraw()
+
+    def _redraw(self, *_):
+        if not self.text:
+            self._base_rect.texture = None
+            self._fill_rect.texture = None
+            return
+
+        self._base_label = CoreLabel(
+            text=self.text, font_size=dp(14), bold=True,
+            color=T.k(T.TEXT_BRIGHT),
+        )
+        self._base_label.refresh()
+
+        self._fill_label = CoreLabel(
+            text=self.text, font_size=dp(14), bold=True,
+            color=tuple(self.fill_rgba),
+        )
+        self._fill_label.refresh()
+
+        tex = self._base_label.texture
+        self._text_width  = tex.width
+        self._text_height = tex.height
+        x = self.x
+        y = self.y + (self.height - self._text_height) / 2
+
+        fill_w = int(max(0, min(self._text_width, round(self._text_width * self.fill_t))))
+        draw_w = min(self._text_width, fill_w + (1 if fill_w > 0 else 0))
+
+        base_w = max(0, self._text_width - fill_w)
+        self._base_rect.texture = tex
+        self._base_rect.tex_coords = (
+            fill_w / max(1, self._text_width), 1,
+            1, 1,
+            1, 0,
+            fill_w / max(1, self._text_width), 0,
+        )
+        self._base_rect.pos  = (x + fill_w, y)
+        self._base_rect.size = (base_w, self._text_height)
+
+        self._fill_rect.texture    = self._fill_label.texture
+        self._fill_rect.tex_coords = (
+            0, 1,
+            draw_w / max(1, self._text_width), 1,
+            draw_w / max(1, self._text_width), 0,
+            0, 0,
+        )
+        self._fill_rect.pos  = (x, y)
+        self._fill_rect.size = (draw_w, self._text_height)
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# ExpandingEffectCard
+# Self-contained expandable row: replaces ListItem + hidden detail MDBoxLayout.
+# Tapping animates open/closed with title fill-sweep, subtitle brightening,
+# and body-text reveal.  Collapsed height matches ListItem (dp(56)).
+# ────────────────────────────────────────────────────────────────────────────
+
+class SwipeFillListItem(MDBoxLayout):
+    """Non-expanding card row with a title swipe-fill selection state."""
+
+    accent_rgba = ListProperty(list(T.k(T.GOLD)))
+
+    def __init__(self, primary: str, secondary: str = "",
+                 accent_hex: str = T.GOLD, on_tap=None, **kwargs):
+        kwargs.setdefault("orientation", "vertical")
+        kwargs.setdefault("size_hint_y", None)
+        kwargs.setdefault("height", dp(56))
+        kwargs.setdefault("padding", [dp(14), dp(6), dp(14), dp(6)])
+        super().__init__(**kwargs)
+        self._on_tap = on_tap
+        self._persist = False
+        self._selected = False
+        self._flash_evt = None
+
+        with self.canvas.before:
+            Color(*T.k(T.BORDER))
+            self._outer = RoundedRectangle(radius=[dp(10)])
+            self._bg_color = Color(*T.k(T.BG_CARD))
+            self._inner = RoundedRectangle(radius=[dp(9)])
+            self._accent_color = Color(*T.k(accent_hex))
+            self._bar = RoundedRectangle(radius=[dp(9), 0, 0, dp(9)])
+
+        self._text_col = MDBoxLayout(
+            orientation="vertical",
+            spacing=dp(0),
+            size_hint_y=None,
+            adaptive_height=True,
+        )
+        self._title_stage = FillSwipeTitle(fill_rgba=list(T.k(accent_hex)))
+        self._subtitle_lbl = MDLabel(
+            text=secondary,
+            markup=True,
+            theme_text_color="Custom",
+            text_color=T.k(T.TEXT_DIM),
+            font_style="Caption",
+            size_hint_y=None,
+            adaptive_height=True,
+        )
+        self._text_col.add_widget(self._title_stage)
+        self._text_col.add_widget(self._subtitle_lbl)
+        self.add_widget(self._text_col)
+
+        self.bind(pos=self._redraw, size=self._redraw, accent_rgba=self._redraw)
+        self.update_text(primary, secondary)
+
+    def update_text(self, primary: str, secondary: str = ""):
+        self._title_stage.text = primary
+        self._subtitle_lbl.text = secondary
+
+    def set_selected(self, selected: bool, persist: bool = False, animate: bool = True):
+        self._persist = persist
+        self._selected = selected
+        self._bg_color.rgba = T.k(T.BG_HOVER if selected else T.BG_CARD)
+        Animation.cancel_all(self._title_stage, "fill_t")
+        target_fill = 1.0 if selected else 0.0
+        if animate:
+            Animation(fill_t=target_fill, duration=0.28, t="out_cubic").start(self._title_stage)
+        else:
+            self._title_stage.fill_t = target_fill
+        self._redraw()
+
+    def flash(self):
+        if self._flash_evt:
+            self._flash_evt.cancel()
+            self._flash_evt = None
+        if hasattr(self, "_stroke_col"):
+            try:
+                self.canvas.after.remove(self._stroke_col)
+                self.canvas.after.remove(self._stroke_line)
+            except Exception:
+                pass
+        self._flash_prog = 0.0
+        with self.canvas.after:
+            self._stroke_col = Color(*self.accent_rgba[:3], 1.0)
+            self._stroke_line = Line(width=dp(2), cap="none", joint="miter")
+        self._flash_evt = Clock.schedule_interval(self._tick_stroke, 1 / 60)
+
+    def _tick_stroke(self, dt):
+        SPEED = 2.0
+        HOLD = 0.25
+        FADE = 0.35
+        self._flash_prog += dt
+        total = 1.0 / SPEED + HOLD + FADE
+        if self._flash_prog >= total:
+            try:
+                self.canvas.after.remove(self._stroke_col)
+                self.canvas.after.remove(self._stroke_line)
+            except Exception:
+                pass
+            self._flash_evt.cancel()
+            self._flash_evt = None
+            return
+        draw_prog = min(self._flash_prog * SPEED, 1.0)
+        fade_start = 1.0 / SPEED + HOLD
+        alpha = (max(0.0, 1.0 - (self._flash_prog - fade_start) / FADE)
+                 if self._flash_prog >= fade_start else 1.0)
+        self._stroke_col.rgba = (*self.accent_rgba[:3], alpha)
+        x = self.x + dp(1)
+        y = self.y + dp(1)
+        w = self.width - dp(2)
+        h = self.height - dp(2)
+        segs = [
+            ((x, y), (x, y + h), h),
+            ((x, y + h), (x + w, y + h), w),
+            ((x + w, y + h), (x + w, y), h),
+            ((x + w, y), (x, y), w),
+        ]
+        dist = draw_prog * 2 * (w + h)
+        pts = [x, y]
+        rem = dist
+        for (x0, y0), (x1, y1), seg_len in segs:
+            if rem <= 0:
+                break
+            if rem >= seg_len:
+                pts += [x1, y1]
+                rem -= seg_len
+            else:
+                t = rem / seg_len
+                pts += [x0 + t * (x1 - x0), y0 + t * (y1 - y0)]
+                break
+        self._stroke_line.points = pts
+
+    def _redraw(self, *_):
+        radius = dp(10)
+        accent_w = dp(6)
+        self._accent_color.rgba = list(self.accent_rgba)
+        self._title_stage.fill_rgba = list(self.accent_rgba)
+
+        self._outer.pos = self.pos
+        self._outer.size = self.size
+        self._outer.radius = [radius]
+
+        self._inner.pos = (self.x + 1, self.y + 1)
+        self._inner.size = (max(0, self.width - 2), max(0, self.height - 2))
+        self._inner.radius = [max(0, radius - 1)]
+
+        self._bar.pos = (self.x + 1, self.y + 1)
+        self._bar.size = (accent_w, max(0, self.height - 2))
+        self._bar.radius = [radius, 0, 0, radius]
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            if self._on_tap:
+                self._on_tap(self)
+            return True
+        return super().on_touch_down(touch)
+
+
+class ExpandingEffectCard(MDBoxLayout):
+    """
+    One widget per entry — animated title fill + expanding detail on tap.
+    Drop-in replacement for ListItem + a sibling hidden detail panel.
+    """
+    title_text    = StringProperty("")
+    subtitle_text = StringProperty("")
+    detail_body   = StringProperty("")
+    accent_rgba   = ListProperty(list(T.k(T.PURPLE)))
+    expand_t      = NumericProperty(0.0)
+    open_state    = BooleanProperty(False)
+
+    def __init__(self, on_tap=None, **kwargs):
+        kwargs.setdefault("orientation", "vertical")
+        kwargs.setdefault("size_hint_y", None)
+        kwargs.setdefault("padding", [dp(14), dp(6), dp(14), dp(6)])
+        kwargs.setdefault("spacing", dp(2))
+        super().__init__(**kwargs)
+        self._on_tap    = on_tap
+        self._base_h    = dp(56)
+        self._flash_evt = None
+
+        with self.canvas.before:
+            Color(*T.k(T.BORDER))
+            self._outer        = RoundedRectangle(radius=[dp(10)])
+            self._bg_color     = Color(*T.k(T.BG_CARD))
+            self._inner        = RoundedRectangle(radius=[dp(9)])
+            self._accent_color = Color(*self.accent_rgba)
+            self._bar          = RoundedRectangle(radius=[dp(9), 0, 0, dp(9)])
+
+        self.bind(
+            pos=self._redraw, size=self._redraw,
+            accent_rgba=self._redraw, expand_t=self._redraw, open_state=self._redraw,
+        )
+
+        # ── Header: FillSwipeTitle + subtitle label ────────────────────────
+        self._header = MDBoxLayout(
+            orientation="horizontal",
+            size_hint_y=None,
+            adaptive_height=True,
+        )
+        self._text_col = MDBoxLayout(
+            orientation="vertical", spacing=dp(0),
+            size_hint_y=None, adaptive_height=True,
+        )
+        self._title_stage  = FillSwipeTitle()
+        self._subtitle_lbl = MDLabel(
+            text="",
+            theme_text_color="Custom",
+            text_color=T.k(T.TEXT_DIM),
+            font_style="Caption",
+            size_hint_y=None,
+            adaptive_height=True,
+        )
+        self._text_col.add_widget(self._title_stage)
+        self._text_col.add_widget(self._subtitle_lbl)
+        self._header.add_widget(self._text_col)
+        self.add_widget(self._header)
+
+        # ── Detail body — hidden (height=0, opacity=0) until expanded ─────
+        self._detail_box = MDBoxLayout(
+            orientation="vertical",
+            size_hint_y=None,
+            opacity=0,
+            height=0,
+        )
+        self._detail_body_lbl = MDLabel(
+            text="",
+            theme_text_color="Custom",
+            text_color=T.k(T.TEXT),
+            font_style="Body2",
+            size_hint_y=None,
+            adaptive_height=True,
+        )
+        self._detail_body_lbl.bind(
+            width=lambda inst, val: setattr(inst, "text_size", (val, None))
+        )
+        self._detail_box.add_widget(self._detail_body_lbl)
+        self.add_widget(self._detail_box)
+
+        self.bind(
+            title_text=lambda *_: self._sync_copy(),
+            subtitle_text=lambda *_: self._sync_copy(),
+            detail_body=lambda *_: self._sync_copy(),
+            accent_rgba=lambda *_: setattr(
+                self._title_stage, "fill_rgba", list(self.accent_rgba)),
+        )
+
+        self.height = self._base_h
+        self._sync_copy()
+
+    # ── Touch ─────────────────────────────────────────────────────────────
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos):
+            if self._on_tap:
+                self._on_tap(self)
+            return True
+        return super().on_touch_down(touch)
+
+    # ── Flash — same clockwise stroke sweep as ListItem ───────────────────
+
+    def flash(self):
+        if self._flash_evt:
+            self._flash_evt.cancel()
+            self._flash_evt = None
+        if hasattr(self, "_stroke_col"):
+            try:
+                self.canvas.after.remove(self._stroke_col)
+                self.canvas.after.remove(self._stroke_line)
+            except Exception:
+                pass
+        self._flash_prog = 0.0
+        with self.canvas.after:
+            self._stroke_col  = Color(*self.accent_rgba[:3], 1.0)
+            self._stroke_line = Line(width=dp(2), cap="none", joint="miter")
+        self._flash_evt = Clock.schedule_interval(self._tick_stroke, 1 / 60)
+
+    def _tick_stroke(self, dt):
+        SPEED = 2.0
+        HOLD  = 0.25
+        FADE  = 0.35
+        self._flash_prog += dt
+        total = 1.0 / SPEED + HOLD + FADE
+        if self._flash_prog >= total:
+            try:
+                self.canvas.after.remove(self._stroke_col)
+                self.canvas.after.remove(self._stroke_line)
+            except Exception:
+                pass
+            self._flash_evt.cancel()
+            self._flash_evt = None
+            return
+        draw_prog  = min(self._flash_prog * SPEED, 1.0)
+        fade_start = 1.0 / SPEED + HOLD
+        alpha = (max(0.0, 1.0 - (self._flash_prog - fade_start) / FADE)
+                 if self._flash_prog >= fade_start else 1.0)
+        self._stroke_col.rgba = (*self.accent_rgba[:3], alpha)
+        x = self.x + dp(1);  y = self.y + dp(1)
+        w = self.width - dp(2);  h = self.height - dp(2)
+        segs = [
+            ((x,       y),       (x,       y + h), h),
+            ((x,       y + h),   (x + w,   y + h), w),
+            ((x + w,   y + h),   (x + w,   y),     h),
+            ((x + w,   y),       (x,       y),     w),
+        ]
+        dist = draw_prog * 2 * (w + h)
+        pts  = [x, y]
+        rem  = dist
+        for (x0, y0), (x1, y1), seg_len in segs:
+            if rem <= 0:
+                break
+            if rem >= seg_len:
+                pts += [x1, y1]
+                rem -= seg_len
+            else:
+                t = rem / seg_len
+                pts += [x0 + t * (x1 - x0), y0 + t * (y1 - y0)]
+                break
+        self._stroke_line.points = pts
+
+    # ── Open / close ──────────────────────────────────────────────────────
+
+    def set_open(self, open_state: bool, animate: bool = True):
+        Animation.cancel_all(self, "height", "expand_t")
+        self.open_state = open_state
+        if not animate:
+            self.expand_t = 1.0 if open_state else 0.0
+            self.height   = self._base_h
+            self._sync_detail_state()
+            if open_state:
+                # Height correction deferred until labels have a layout pass
+                Clock.schedule_once(self._open_after_layout)
+            return
+        target_h = self._target_open_height() if open_state else self._base_h
+        target_t = 1.0 if open_state else 0.0
+        Animation(height=target_h, expand_t=target_t,
+                  duration=0.28, t="out_cubic").start(self)
+
+    def _open_after_layout(self, dt):
+        if not self.open_state:
+            return
+        h = self._target_open_height()
+        if h <= self._base_h:
+            Clock.schedule_once(self._open_after_layout)
+            return
+        self.height = h
+        self._sync_detail_state()
+
+    def _target_open_height(self):
+        body_h = max(dp(16), self._detail_body_lbl.height)
+        return (
+            self.padding[1] + self.padding[3]
+            + self._header.height
+            + self.spacing
+            + body_h
+            + dp(10)
+        )
+
+    # ── State sync ────────────────────────────────────────────────────────
+
+    def _sync_detail_state(self):
+        t = self.expand_t
+        body_alpha = max(0.0, min(1.0, (t - 0.50) / 0.24))
+        self._detail_box.opacity      = body_alpha
+        self._detail_body_lbl.opacity = body_alpha
+        extra_h = max(0.0, self.height - self._base_h)
+        self._detail_box.height = extra_h
+
+        subtitle_mix = max(0.0, min(1.0, (t - 0.18) / 0.24))
+        dim    = T.k(T.TEXT_DIM)[:3]
+        bright = T.k(T.TEXT_BRIGHT)[:3]
+        color  = tuple(dim[i] + (bright[i] - dim[i]) * subtitle_mix for i in range(3))
+        self._subtitle_lbl.text_color = (*color, 1.0)
+        self._subtitle_lbl.bold       = subtitle_mix > 0.15
+        self._title_stage.fill_t      = max(0.0, min(1.0, (t - 0.12) / 0.46))
+
+    def _redraw(self, *_):
+        self._sync_detail_state()
+        radius   = dp(10 + 2 * self.expand_t)
+        accent_w = dp(6 + 2 * self.expand_t)
+
+        self._bg_color.rgba     = T.k(T.BG_HOVER) if self.open_state else T.k(T.BG_CARD)
+        self._accent_color.rgba = list(self.accent_rgba)
+
+        self._outer.pos    = self.pos
+        self._outer.size   = self.size
+        self._outer.radius = [radius]
+
+        self._inner.pos    = (self.x + 1, self.y + 1)
+        self._inner.size   = (max(0, self.width - 2), max(0, self.height - 2))
+        self._inner.radius = [max(0, radius - 1)]
+
+        self._bar.pos    = (self.x + 1, self.y + 1)
+        self._bar.size   = (accent_w, max(0, self.height - 2))
+        self._bar.radius = [radius, 0, 0, radius]
+
+    def _sync_copy(self):
+        self._title_stage.text      = self.title_text
+        self._subtitle_lbl.text     = self.subtitle_text
+        self._detail_body_lbl.text  = self.detail_body
+        self._title_stage.fill_rgba = list(self.accent_rgba)
+
+
+# ────────────────────────────────────────────────────────────────────────────
 # PickerButton
 # A bordered selector-style button (looks like a dropdown, not an action button).
 # ────────────────────────────────────────────────────────────────────────────
+
+class NotificationActionButton(BoxLayout):
+    """Compact notification action button with accent outline sweep feedback."""
+
+    def __init__(self, text: str, color_hex: str, on_release=None, **kwargs):
+        kwargs.setdefault("size_hint_x", None)
+        kwargs.setdefault("width", dp(98))
+        kwargs.setdefault("size_hint_y", None)
+        kwargs.setdefault("height", dp(34))
+        kwargs.setdefault("padding", [dp(10), 0, dp(10), 0])
+        super().__init__(orientation="horizontal", **kwargs)
+        self._on_release = on_release
+        self._accent_hex = color_hex
+        self._pending_release = False
+
+        with self.canvas.before:
+            self._bd_color = Color(*T.k(color_hex, 0.55))
+            self._bd = RoundedRectangle(radius=[dp(5)])
+            self._bg_color = Color(*T.k(T.BG_INSET))
+            self._bg = RoundedRectangle(radius=[dp(4)])
+        self.bind(pos=self._upd, size=self._upd)
+
+        self._lbl = MDLabel(
+            text=text,
+            bold=True,
+            theme_text_color="Custom",
+            text_color=T.k(color_hex),
+            font_style="Button",
+            halign="center",
+            valign="middle",
+        )
+        self._lbl.bind(size=lambda inst, *_: setattr(inst, "text_size", inst.size))
+        self.add_widget(self._lbl)
+
+    def _upd(self, *_):
+        self._bd.pos = self.pos
+        self._bd.size = self.size
+        self._bg.pos = (self.x + 1, self.y + 1)
+        self._bg.size = (max(0, self.width - 2), max(0, self.height - 2))
+
+    def _set_pressed(self, pressed: bool):
+        self._bg_color.rgba = T.k(self._accent_hex, 0.12) if pressed else T.k(T.BG_INSET)
+        self._bd_color.rgba = T.k(self._accent_hex, 0.9 if pressed else 0.55)
+
+    def play_select_anim(self):
+        if hasattr(self, "_flash_evt") and self._flash_evt:
+            self._flash_evt.cancel()
+            self._flash_evt = None
+        if hasattr(self, "_stroke_col"):
+            try:
+                self.canvas.after.remove(self._stroke_col)
+                self.canvas.after.remove(self._stroke_line)
+            except Exception:
+                pass
+        self._flash_prog = 0.0
+        with self.canvas.after:
+            self._stroke_col = Color(*T.k(self._accent_hex), 1.0)
+            self._stroke_line = Line(width=dp(2), cap="none", joint="miter")
+        self._flash_evt = Clock.schedule_interval(self._tick_stroke, 1 / 60)
+
+    def _tick_stroke(self, dt):
+        speed = 2.25
+        hold = 0.16
+        fade = 0.28
+        self._flash_prog += dt
+        total = 1.0 / speed + hold + fade
+        if self._flash_prog >= total:
+            try:
+                self.canvas.after.remove(self._stroke_col)
+                self.canvas.after.remove(self._stroke_line)
+            except Exception:
+                pass
+            self._flash_evt.cancel()
+            self._flash_evt = None
+            return
+        draw_prog = min(self._flash_prog * speed, 1.0)
+        fade_start = 1.0 / speed + hold
+        alpha = max(0.0, 1.0 - (self._flash_prog - fade_start) / fade) \
+                if self._flash_prog >= fade_start else 1.0
+        self._stroke_col.rgba = (*T.k(self._accent_hex)[:3], alpha)
+
+        x = self.x + dp(1)
+        y = self.y + dp(1)
+        w = self.width - dp(2)
+        h = self.height - dp(2)
+        segs = [
+            ((x, y), (x, y + h), h),
+            ((x, y + h), (x + w, y + h), w),
+            ((x + w, y + h), (x + w, y), h),
+            ((x + w, y), (x, y), w),
+        ]
+        dist = draw_prog * 2 * (w + h)
+        pts = [x, y]
+        rem = dist
+        for (x0, y0), (x1, y1), seg_len in segs:
+            if rem <= 0:
+                break
+            if rem >= seg_len:
+                pts += [x1, y1]
+                rem -= seg_len
+            else:
+                t = rem / seg_len
+                pts += [x0 + t * (x1 - x0), y0 + t * (y1 - y0)]
+                break
+        self._stroke_line.points = pts
+
+    def _dispatch_release(self, *_):
+        self._pending_release = False
+        if self._on_release:
+            self._on_release(self)
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos) and not self._pending_release:
+            touch.grab(self)
+            self._set_pressed(True)
+            return True
+        return super().on_touch_down(touch)
+
+    def on_touch_move(self, touch):
+        if touch.grab_current is self:
+            self._set_pressed(self.collide_point(*touch.pos))
+            return True
+        return super().on_touch_move(touch)
+
+    def on_touch_up(self, touch):
+        if touch.grab_current is self:
+            touch.ungrab(self)
+            inside = self.collide_point(*touch.pos)
+            self._set_pressed(False)
+            if inside and not self._pending_release:
+                self._pending_release = True
+                self._dispatch_release()
+            return True
+        return super().on_touch_up(touch)
+
+
+class MorphArrow(Widget):
+    # ── Collapsed: clean right-pointing →
+    # ── Expanded:  L-hook (goes right, bends 90° down) — downward ↪
+    #
+    # Seven normalised vertices (Kivy: y=0 bottom, y=1 top):
+    #   s0–s3  shaft waypoints  (drawn as one round-jointed polyline)
+    #   tip    arrowhead apex
+    #   a1,a2  arrowhead arm ends
+
+    _t = NumericProperty(0.0)
+
+    _PTS_COLLAPSED = (              # →
+        (0.06, 0.50),               # s0  tail — left centre
+        (0.30, 0.50),               # s1
+        (0.55, 0.50),               # s2
+        (0.72, 0.50),               # s3  near-tip
+        (0.92, 0.50),               # tip — right centre
+        (0.70, 0.73),               # a1  upper arm
+        (0.70, 0.27),               # a2  lower arm
+    )
+    _PTS_EXPANDED = (               # downward ↪  (right then down)
+        (0.08, 0.80),               # s0  tail — upper left
+        (0.36, 0.80),               # s1  horizontal run
+        (0.66, 0.80),               # s2  at corner top-right
+        (0.66, 0.50),               # s3  post-corner, mid-descent
+        (0.66, 0.12),               # tip — bottom
+        (0.40, 0.32),               # a1  left arm
+        (0.92, 0.32),               # a2  right arm
+    )
+
+    def __init__(self, color_hex: str, t: float = 0.0, **kwargs):
+        super().__init__(**kwargs)
+        self._color_hex = color_hex
+        self._morph_anim = None
+        self._t = t
+        self.bind(pos=self._draw, size=self._draw, _t=self._draw)
+        Clock.schedule_once(self._draw)
+
+    def _interp_pts(self):
+        t, u = self._t, 1.0 - self._t
+        return [(u * cx + t * ex, u * cy + t * ey)
+                for (cx, cy), (ex, ey)
+                in zip(self._PTS_COLLAPSED, self._PTS_EXPANDED)]
+
+    def _draw(self, *_):
+        self.canvas.clear()
+        if not self.width or not self.height:
+            return
+        pts = self._interp_pts()
+        px = [(self.x + nx * self.width, self.y + ny * self.height)
+              for nx, ny in pts]
+        s0, s1, s2, s3, tip, a1, a2 = px
+        with self.canvas:
+            Color(*T.k(self._color_hex))
+            Line(points=[s0[0], s0[1], s1[0], s1[1],
+                         s2[0], s2[1], s3[0], s3[1], tip[0], tip[1]],
+                 width=dp(1.8), cap="round", joint="round")
+            Line(points=[tip[0], tip[1], a1[0], a1[1]], width=dp(1.8), cap="round")
+            Line(points=[tip[0], tip[1], a2[0], a2[1]], width=dp(1.8), cap="round")
+
+    def morph_to(self, target: float, duration: float = 0.26):
+        if self._morph_anim:
+            self._morph_anim.cancel(self)
+        self._morph_anim = Animation(_t=target, duration=duration, t="out_quart")
+        self._morph_anim.start(self)
+
 
 class PickerButton(BoxLayout):
     """
@@ -519,11 +1216,12 @@ class PickerButton(BoxLayout):
             text=text, bold=True,
             theme_text_color="Custom", text_color=T.k(color_hex),
             font_style="Button", halign="left")
-        self._arrow = MDLabel(
-            text="v",
-            theme_text_color="Custom", text_color=T.k(color_hex, 0.55),
-            font_style="Caption", halign="right",
-            size_hint_x=None, width=dp(20))
+        self._arrow = MorphArrow(
+            color_hex=color_hex,
+            t=0.0,
+            size_hint_x=None, width=dp(20),
+            size_hint_y=None, height=dp(22),
+            pos_hint={"center_y": 0.5})
         inner.add_widget(self._lbl)
         inner.add_widget(self._arrow)
         self.add_widget(inner)
@@ -540,35 +1238,233 @@ class PickerButton(BoxLayout):
             return True
         return super().on_touch_down(touch)
 
+    def play_select_anim(self):
+        self._arrow._t = 0.0
+        self._arrow.morph_to(1.0)
+
+    def reset_select_anim(self):
+        self._arrow.morph_to(0.0)
+
+
+
 
 # ────────────────────────────────────────────────────────────────────────────
-# PageDot
-# Canvas-drawn colored circle for page indicators (avoids Unicode glyph issues).
+# _DualFillLabel
+# ONE canvas widget containing both page titles.
+# Uses GL ScissorPush/ScissorPop (not StencilView) to clip the coloured render.
+#
+# Layout: [left_container][dot_gap][dot][dot_gap][right_container]
+# Both containers have the same fixed pixel width (half the available space).
+# Text is scaled to fit its container (clamped between MIN_FS and MAX_FS),
+# then centered inside it.
+#
+# The active band has constant width == container_w and slides linearly from
+# the left container to the right container as p goes 0 → 1, so the fill
+# travels at a steady rate regardless of how wide each label's text is.
 # ────────────────────────────────────────────────────────────────────────────
 
-class PageDot(Widget):
-    """Small canvas-drawn circle for swipe page indicators. Call set_color() to update."""
+def _mix_rgba(c0, c1, t: float):
+    t = max(0.0, min(1.0, t))
+    return tuple(c0[i] + (c1[i] - c0[i]) * t for i in range(4))
 
-    def __init__(self, color_hex: str = T.BORDER, **kwargs):
-        kwargs.setdefault("size_hint_x", None)
-        kwargs.setdefault("width", dp(14))
+
+class _DualFillLabel(Widget):
+    _MAX_FS       = sp(12)
+    _MIN_FS       = sp(7)
+    _MAX_CTR_W    = int(dp(120))   # absolute cap so containers never grow absurdly wide
+
+    def __init__(self, left_title: str, right_title: str,
+                 left_hex: str, right_hex: str, **kwargs):
+        kwargs.setdefault("size_hint_y", None)
+        kwargs.setdefault("height", dp(18))
         super().__init__(**kwargs)
-        self._ch = color_hex
+        self._lt  = left_title
+        self._rt  = right_title
+        self._lc  = T.k(left_hex)
+        self._rc  = T.k(right_hex)
+        self._p          = 0.0
+        self._tex_l      = None
+        self._tex_r      = None
+        self._container_w = 0
         self.bind(pos=self._draw, size=self._draw)
-        Clock.schedule_once(self._draw)
+        Clock.schedule_once(self._bake)
 
-    def set_color(self, hex_color: str):
-        self._ch = hex_color
+    def _bake(self, *_):
+        """Bake both textures; container_w is driven by text content, not widget width."""
+        # First pass: render at max font to measure natural widths
+        raw = []
+        for title in (self._lt, self._rt):
+            cl = CoreLabel(text=title, font_size=self._MAX_FS, bold=True)
+            cl.refresh()
+            raw.append(cl.texture)
+
+        # Container = widest label + small side padding, capped at absolute max
+        natural_w  = max(raw[0].width, raw[1].width)
+        container_w = min(natural_w + int(dp(6)), self._MAX_CTR_W)
+
+        # Second pass: scale down only if natural width still exceeds container
+        baked = []
+        for title, tex in zip((self._lt, self._rt), raw):
+            if tex.width > container_w:
+                scaled_fs = max(self._MIN_FS,
+                                self._MAX_FS * container_w / tex.width)
+                cl = CoreLabel(text=title, font_size=scaled_fs, bold=True)
+                cl.refresh()
+                tex = cl.texture
+            baked.append(tex)
+
+        self._tex_l, self._tex_r = baked
+        self._container_w = container_w
         self._draw()
+
+    def set_progress(self, p: float):
+        self._p = max(0.0, min(1.0, p))
+        self._draw()
+
+    def _draw_elements(self, tl, tr, tl_x, tl_y, tr_x, tr_y,
+                       dot_x, dot_y, dot_d):
+        Rectangle(texture=tl, pos=(tl_x, tl_y), size=tl.size)
+        Ellipse(pos=(dot_x, dot_y), size=(dot_d, dot_d))
+        Rectangle(texture=tr, pos=(tr_x, tr_y), size=tr.size)
+
+    def _draw_clipped_region(self, region_x, region_y, region_w, region_h,
+                             color_rgba, tl, tr, tl_x, tl_y, tr_x, tr_y,
+                             dot_x, dot_y, dot_d):
+        if region_w <= 0:
+            return
+        ScissorPush(
+            x=int(region_x),
+            y=int(region_y),
+            width=int(region_w),
+            height=int(region_h),
+        )
+        Color(*color_rgba)
+        self._draw_elements(
+            tl, tr, tl_x, tl_y, tr_x, tr_y,
+            dot_x, dot_y, dot_d
+        )
+        ScissorPop()
 
     def _draw(self, *_):
         self.canvas.clear()
-        d = min(self.width, self.height) * 0.55
-        x = self.x + (self.width  - d) / 2
-        y = self.y + (self.height - d) / 2
+        if self.width <= 1 or self.height <= 1:
+            return
+
+        container_w = self._container_w
+        if not self._tex_l or not self._tex_r or container_w <= 0:
+            return
+
+        x = int(self.x)
+        y = int(self.y)
+        w = int(self.width)
+        h = int(self.height)
+
+        dot_r    = int(dp(2.5))
+        dot_d    = dot_r * 2
+        dot_gap  = int(dp(6))
+        text_pad = int(dp(7))
+
+        mid_x = x + w // 2
+        mid_y = y + h // 2
+        dot_x = mid_x - dot_r
+        dot_y = mid_y - dot_r
+
+        # Containers sit adjacent to the dot — width is content-driven, not widget-driven.
+        # Left container : right edge flush against dot gap, extends left by container_w
+        # Right container: left edge flush against dot gap, extends right by container_w
+        tl_container_x = dot_x - dot_gap - text_pad - container_w
+        tr_container_x = dot_x + dot_d + dot_gap + text_pad
+
+        tl = self._tex_l
+        tr = self._tex_r
+
+        # Inner-edge align: each label's edge nearest the dot is flush with
+        # the container's inner boundary, so both sides sit the same pixel
+        # distance from the dot regardless of how wide each label's text is.
+        tl_x = tl_container_x + (container_w - tl.width)   # right-align in container
+        tl_y = y + (h - tl.height) // 2
+        tr_x = tr_container_x                               # left-align in container
+        tr_y = y + (h - tr.height) // 2
+
+        base_rgba   = T.k(T.TEXT_DIM, 0.55)
+        active_rgba = _mix_rgba(self._lc, self._rc, self._p)
+
+        # Constant-width band slides from left container start → right container start.
+        # band_w == container_w always, so the fill rate is identical across both labels.
+        p      = self._p
+        band_x = tl_container_x + (tr_container_x - tl_container_x) * p
+        band_w = container_w
+
         with self.canvas:
-            Color(*T.k(self._ch))
-            Ellipse(pos=(x, y), size=(d, d))
+            # Base layer — everything dim/gray
+            Color(*base_rgba)
+            self._draw_elements(
+                tl, tr, tl_x, tl_y, tr_x, tr_y,
+                dot_x, dot_y, dot_d
+            )
+
+            # Active layer — single scissor window that slides across the strip
+            self._draw_clipped_region(
+                region_x=int(round(band_x)),
+                region_y=y,
+                region_w=int(round(band_w)),
+                region_h=h,
+                color_rgba=active_rgba,
+                tl=tl, tr=tr,
+                tl_x=tl_x, tl_y=tl_y,
+                tr_x=tr_x, tr_y=tr_y,
+                dot_x=dot_x,
+                dot_y=dot_y, dot_d=dot_d
+            )
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# SwipePageIndicator
+# ────────────────────────────────────────────────────────────────────────────
+
+class SwipePageIndicator(MDBoxLayout):
+    progress = NumericProperty(0.0)
+
+    def __init__(self, left_title: str, right_title: str,
+                 left_hex: str, right_hex: str | None = None,
+                 bg_hex: str | None = None, **kwargs):
+        kwargs.setdefault("size_hint_y", None)
+        kwargs.setdefault("height", dp(34))
+        kwargs.setdefault("spacing", 0)
+        kwargs.setdefault("padding", [dp(10), dp(4), dp(10), dp(4)])
+        super().__init__(orientation="vertical", **kwargs)
+        self._lhex = left_hex
+        self._rhex = right_hex or left_hex
+
+        with self.canvas.before:
+            Color(*T.k(bg_hex or left_hex, 0.14))
+            self._bg = Rectangle()
+        self.bind(pos=self._upd_bg, size=self._upd_bg, progress=self._sync)
+
+        page_lbl = MDLabel(
+            text="PAGE", bold=True, font_style="Caption",
+            halign="center", theme_text_color="Custom",
+            text_color=T.k(T.TEXT_DIM), size_hint_y=None, height=dp(10))
+        page_lbl.font_size = "10sp"
+
+        self._bar = _DualFillLabel(
+            left_title, right_title,
+            left_hex=self._lhex, right_hex=self._rhex,
+            size_hint_y=None, height=dp(18))
+
+        self.add_widget(page_lbl)
+        self.add_widget(self._bar)
+        Clock.schedule_once(self._sync)
+
+    def _upd_bg(self, *_):
+        self._bg.pos  = self.pos
+        self._bg.size = self.size
+
+    def set_progress(self, progress: float):
+        self.progress = max(0.0, min(1.0, progress))
+
+    def _sync(self, *_):
+        self._bar.set_progress(self.progress)
 
 
 # ────────────────────────────────────────────────────────────────────────────
@@ -611,13 +1507,21 @@ class ExpandableSection(MDBoxLayout):
             self._hdr_bar = Rectangle()
         hdr.bind(pos=self._upd_hdr, size=self._upd_hdr)
 
+        self._arrow = MorphArrow(
+            color_hex=accent_hex,
+            t=1.0 if start_open else 0.0,
+            size_hint_x=None, width=dp(28),
+            size_hint_y=None, height=dp(28),
+            pos_hint={"center_y": 0.5})
+        hdr.add_widget(self._arrow)
+
         self._toggle_lbl = MDLabel(
-            text=("v  " if start_open else ">  ") + title,
+            text=title,
             theme_text_color="Custom",
             text_color=T.k(accent_hex),
             font_style="Button",
             bold=True,
-            padding=[dp(12), 0])
+            padding=[0, 0, dp(12), 0])
         hdr.add_widget(self._toggle_lbl)
         hdr.bind(on_touch_down=self._on_header_touch)
         self.add_widget(hdr)
@@ -684,15 +1588,14 @@ class ExpandableSection(MDBoxLayout):
             self._box.height  = 0
             self._box.opacity = 0
             self._open = False
-            self._toggle_lbl.text = ">  " + self._title
+            self._arrow.morph_to(0.0)
 
     # ── Toggle ────────────────────────────────────────────────────────────
 
     def _on_header_touch(self, widget, touch):
         if widget.collide_point(*touch.pos):
             self._open = not self._open
-            self._toggle_lbl.text = (
-                ("v  " if self._open else ">  ") + self._title)
+            self._arrow.morph_to(1.0 if self._open else 0.0)
             if self._open:
                 self._box.height  = self._content.minimum_height
                 self._box.opacity = 1

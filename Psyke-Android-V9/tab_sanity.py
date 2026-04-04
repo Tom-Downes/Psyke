@@ -11,10 +11,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from kivy.animation import Animation
 from kivy.app import App
 from kivy.clock import Clock
-from kivy.graphics import Color, Rectangle
+from kivy.graphics import Color
 from kivy.metrics import dp
+from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.widget import Widget
 
@@ -32,7 +34,7 @@ from models import (
 from ui_utils import (
     BorderCard, AccentCard, DescriptionCard, Divider,
     SectionLabel, CaptionLabel,
-    ListItem, ExpandableSection, themed_field, PickerButton, PageDot,
+    ExpandingEffectCard, ExpandableSection, themed_field, PickerButton, SwipePageIndicator,
     populate_rules_section
 )
 import theme as T
@@ -46,9 +48,8 @@ class SanityTab(MDBoxLayout):
 
         # Selection tracked by OBJECT identity (like fear tab tracks by name)
         self._selected_madness: MadnessEntry | None = None
-        self._sel_mad_widget: ListItem | None = None
-        self._madness_details: dict = {}   # idx -> detail MDBoxLayout
-        self._madness_items: dict = {}    # idx -> ListItem widget
+        self._active_card: ExpandingEffectCard | None = None
+        self._madness_items: dict = {}    # idx -> ExpandingEffectCard
 
         # Add-page: kind -> (detail MDBoxLayout, desc MDLabel, apply_btn)
         self._add_preview: dict = {}
@@ -60,11 +61,9 @@ class SanityTab(MDBoxLayout):
 
         self.add_widget(self._build_page_indicator())
 
-        self._content_area = MDBoxLayout(orientation="vertical")
-        self.add_widget(self._content_area)
 
         # ── Page 0 (Sanity & Insanity) ───────────────────────────────────────
-        self._sv0 = ScrollView(do_scroll_x=False)
+        self._sv0 = ScrollView(do_scroll_x=False, size_hint=(None, None))
         p0 = MDBoxLayout(
             orientation="vertical",
             padding=dp(10), spacing=dp(8),
@@ -75,7 +74,7 @@ class SanityTab(MDBoxLayout):
         self._sv0.add_widget(p0)
 
         # ── Page 1 (Add Insanity) ────────────────────────────────────────────
-        self._sv1 = ScrollView(do_scroll_x=False)
+        self._sv1 = ScrollView(do_scroll_x=False, size_hint=(None, None))
         p1 = MDBoxLayout(
             orientation="vertical",
             padding=dp(10), spacing=dp(8),
@@ -84,56 +83,26 @@ class SanityTab(MDBoxLayout):
         p1.add_widget(self._build_rules_panel())
         self._sv1.add_widget(p1)
 
+        self._content_area = FloatLayout()
+        self._content_area.bind(
+            size=lambda *_: Clock.schedule_once(lambda dt: self._update_sv_positions()),
+            pos=lambda *_: Clock.schedule_once(lambda dt: self._update_sv_positions()),
+        )
         self._content_area.add_widget(self._sv0)
+        self._content_area.add_widget(self._sv1)
+        self.add_widget(self._content_area)
         self._update_indicator()
 
     # ── Page indicator ───────────────────────────────────────────────────────
 
     def _build_page_indicator(self) -> MDBoxLayout:
-        row = MDBoxLayout(
-            size_hint_y=None, height=dp(26),
-            spacing=dp(4), padding=[dp(10), dp(2), dp(10), dp(2)])
+        self._page_indicator = SwipePageIndicator(
+            "Sanity & Insanity", "Add Insanity",
+            left_hex=T.PURPLE, right_hex=T.PURPLE_LT, bg_hex=T.PURPLE)
+        return self._page_indicator
 
-        with row.canvas.before:
-            Color(*T.k(T.PURPLE, 0.15))
-            self._ind_bg = Rectangle()
-        row.bind(pos=lambda w, _: setattr(self._ind_bg, 'pos', w.pos),
-                 size=lambda w, _: setattr(self._ind_bg, 'size', w.size))
-
-        self._ind_lbl0 = MDLabel(
-            text="Sanity & Insanity", halign="right",
-            theme_text_color="Custom", text_color=T.k(T.WHITE),
-            font_style="Caption", bold=True, size_hint_x=0.44)
-
-        self._dot0 = PageDot(color_hex=T.PURPLE)
-        self._dot1 = PageDot(color_hex=T.TEXT_DIM)
-
-        self._ind_lbl1 = MDLabel(
-            text="Add Insanity", halign="left",
-            theme_text_color="Custom", text_color=T.k(T.TEXT_DIM),
-            font_style="Caption", bold=False, size_hint_x=0.44)
-
-        row.add_widget(self._ind_lbl0)
-        row.add_widget(self._dot0)
-        row.add_widget(self._dot1)
-        row.add_widget(self._ind_lbl1)
-        return row
-
-    def _update_indicator(self):
-        if self._page == 0:
-            self._dot0.set_color(T.PURPLE)
-            self._dot1.set_color(T.TEXT_DIM)
-            self._ind_lbl0.bold       = True
-            self._ind_lbl0.text_color = T.k(T.PURPLE)
-            self._ind_lbl1.bold       = False
-            self._ind_lbl1.text_color = T.k(T.TEXT_DIM)
-        else:
-            self._dot0.set_color(T.TEXT_DIM)
-            self._dot1.set_color(T.PURPLE_LT)
-            self._ind_lbl0.bold       = False
-            self._ind_lbl0.text_color = T.k(T.TEXT_DIM)
-            self._ind_lbl1.bold       = True
-            self._ind_lbl1.text_color = T.k(T.PURPLE_LT)
+    def _update_indicator(self, progress: float | None = None):
+        self._page_indicator.set_progress(float(self._page) if progress is None else progress)
 
     def _reset_add_page(self):
         """Reset all add-page picker buttons and preview panels to default."""
@@ -143,34 +112,113 @@ class SanityTab(MDBoxLayout):
             self._collapse_panel(detail)
             desc_lbl.text = ""
             pick_btn._lbl.text = default_text
+            pick_btn.reset_select_anim()
 
-    def _go_page(self, page: int):
+    def _update_sv_positions(self, extra_offset: float = 0):
+        w = self._content_area.width
+        h = self._content_area.height
+        if w == 0 or h == 0:
+            return
+        base = -self._page * w + extra_offset
+        self._sv0.size = (w, h)
+        self._sv1.size = (w, h)
+        self._sv0.pos = (self._content_area.x + base, self._content_area.y)
+        self._sv1.pos = (self._content_area.x + base + w, self._content_area.y)
+        self._update_indicator(max(0.0, min(1.0, -base / w)))
+
+    def _animate_to_page(self, page: int):
         if page == self._page:
             return
         if self._page == 1:
             self._reset_add_page()
         self._page = page
-        self._content_area.clear_widgets()
-        self._content_area.add_widget(self._sv0 if page == 0 else self._sv1)
-        self._update_indicator()
+        w = self._content_area.width
+        target_base = -page * w
+        Animation.cancel_all(self._sv0)
+        Animation.cancel_all(self._sv1)
+        Animation.cancel_all(self._page_indicator, 'progress')
+        anim0 = Animation(x=self._content_area.x + target_base,
+                          duration=0.25, t='out_cubic')
+        anim1 = Animation(x=self._content_area.x + target_base + w,
+                          duration=0.25, t='out_cubic')
+        Animation(progress=page, duration=0.25, t='out_cubic').start(self._page_indicator)
+        anim0.start(self._sv0)
+        anim1.start(self._sv1)
+
+    def _animate_snap_back(self):
+        w = self._content_area.width
+        base = -self._page * w
+        Animation.cancel_all(self._sv0)
+        Animation.cancel_all(self._sv1)
+        Animation.cancel_all(self._page_indicator, 'progress')
+        anim0 = Animation(x=self._content_area.x + base,
+                          duration=0.2, t='out_cubic')
+        anim1 = Animation(x=self._content_area.x + base + w,
+                          duration=0.2, t='out_cubic')
+        Animation(progress=self._page, duration=0.2, t='out_cubic').start(self._page_indicator)
+        anim0.start(self._sv0)
+        anim1.start(self._sv1)
+
+    def _go_page(self, page: int):
+        self._animate_to_page(page)
 
     # ── Swipe detection ──────────────────────────────────────────────────────
 
     def on_touch_down(self, touch):
         if self.collide_point(*touch.pos):
             touch.ud['sanity_swipe_start'] = (touch.x, touch.y)
+            touch.ud['sanity_swiping'] = False
         return super().on_touch_down(touch)
 
-    def on_touch_up(self, touch):
+    def on_touch_move(self, touch):
+        if touch.grab_current is self:
+            start = touch.ud.get('sanity_swipe_start')
+            if start:
+                dx = touch.x - start[0]
+                w = self._content_area.width
+                if self._page == 0:
+                    offset = max(-w, min(0.0, dx))
+                else:
+                    offset = max(0.0, min(w, dx))
+                self._update_sv_positions(offset)
+            return True
         start = touch.ud.get('sanity_swipe_start')
-        if start:
+        if (start and not touch.ud.get('sanity_swiping')
+                and self.collide_point(*touch.pos)):
             dx = touch.x - start[0]
             dy = touch.y - start[1]
-            if abs(dx) > dp(50) and abs(dx) > abs(dy) * 1.5:
-                if dx < 0:
-                    self._go_page(1)
-                elif dx > 0:
-                    self._go_page(0)
+            if abs(dx) > dp(10) and abs(dx) > abs(dy) * 1.5:
+                touch.ud['sanity_swiping'] = True
+                touch.grab(self)
+                Animation.cancel_all(self._sv0)
+                Animation.cancel_all(self._sv1)
+                Animation.cancel_all(self._page_indicator, 'progress')
+                w = self._content_area.width
+                if self._page == 0:
+                    offset = max(-w, min(0.0, dx))
+                else:
+                    offset = max(0.0, min(w, dx))
+                self._update_sv_positions(offset)
+                return True
+        return super().on_touch_move(touch)
+
+    def on_touch_up(self, touch):
+        if touch.grab_current is self:
+            touch.ungrab(self)
+            start = touch.ud.get('sanity_swipe_start')
+            if start:
+                dx = touch.x - start[0]
+                dy = touch.y - start[1]
+                if abs(dx) > dp(50) and abs(dx) > abs(dy) * 1.5:
+                    if dx < 0 and self._page == 0:
+                        self._animate_to_page(1)
+                    elif dx > 0 and self._page == 1:
+                        self._animate_to_page(0)
+                    else:
+                        self._animate_snap_back()
+                else:
+                    self._animate_snap_back()
+            return True
         return super().on_touch_up(touch)
 
     # ── Build: Sanity Card ────────────────────────────────────────────────────
@@ -247,7 +295,7 @@ class SanityTab(MDBoxLayout):
             detail = MDBoxLayout(
                 orientation="vertical", size_hint_y=None, height=0, opacity=0,
                 padding=[dp(0), dp(4), dp(0), dp(4)])
-            desc_card = DescriptionCard(title=f"{title} INSANITY", color_hex=color)
+            desc_card = DescriptionCard(title="", color_hex=color)
             desc_lbl = MDLabel(
                 text="",
                 theme_text_color="Custom", text_color=T.k(T.TEXT),
@@ -300,16 +348,20 @@ class SanityTab(MDBoxLayout):
         """Close all expandable panels — called on tab enter/leave."""
         if hasattr(self, "_rules_sec"):
             self._rules_sec.close()
-        for detail in self._madness_details.values():
-            detail.height  = 0
-            detail.opacity = 0
-        # Deselect all items
-        for item in self._madness_items.values():
-            item.set_selected(False, persist=False)
+        for card in self._madness_items.values():
+            card.set_open(False, animate=False)
+        self._active_card      = None
+        self._selected_madness = None
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _app(self): return App.get_running_app()
+
+    def _madness_summary(self, kind_label: str, roll: str, duration: str = "") -> str:
+        parts = [kind_label, f"Roll: {roll}"]
+        if duration:
+            parts.append(duration)
+        return " | ".join(parts)
 
     def _push_undo(self):
         app = self._app()
@@ -331,21 +383,25 @@ class SanityTab(MDBoxLayout):
             md_bg_color=T.k(color), duration=2.5
         ).open()
 
-    def _sync_panel_height(self, panel):
-        """Set panel height to its content height — called via Clock after layout."""
-        panel.height = panel.minimum_height
-
-    def _expand_panel(self, detail: MDBoxLayout):
-        """Expand a detail panel — exact same pattern as Fear Severity/Desens."""
+    def _expand_panel(self, detail: MDBoxLayout, animate: bool = True):
+        """Expand a plain MDBoxLayout preview panel (used by Add Insanity page)."""
+        Animation.cancel_all(detail, 'height', 'opacity')
         detail.size_hint_y = None
-        detail.opacity     = 1
-        Clock.schedule_once(lambda dt, d=detail: self._sync_panel_height(d))
+        if not animate:
+            detail.opacity = 1
+            Clock.schedule_once(lambda dt, d=detail: setattr(d, 'height', d.minimum_height))
+            return
+        detail.height  = 0
+        detail.opacity = 0
+        Clock.schedule_once(
+            lambda *_: Animation(
+                height=detail.minimum_height or dp(80), opacity=1,
+                duration=0.25, t='out_cubic').start(detail))
 
     def _collapse_panel(self, detail: MDBoxLayout):
-        """Collapse a detail panel — exact same pattern as Fear Severity/Desens."""
-        detail.size_hint_y = None
-        detail.height      = 0
-        detail.opacity     = 0
+        """Collapse a plain MDBoxLayout preview panel (used by Add Insanity page)."""
+        Animation.cancel_all(detail, 'height', 'opacity')
+        Animation(height=0, opacity=0, duration=0.2, t='in_cubic').start(detail)
 
     # ── Public refresh ─────────────────────────────────────────────────────────
 
@@ -354,9 +410,8 @@ class SanityTab(MDBoxLayout):
 
         # Preserve selection across rebuild (track by object identity)
         prev = self._selected_madness
-        self._sel_mad_widget = None
+        self._active_card = None
         self._madness_list_box.clear_widgets()
-        self._madness_details.clear()
         self._madness_items.clear()
 
         kind_colors = {"short": T.M_SHORT, "long": T.M_LONG, "indefinite": T.M_INDEF}
@@ -372,45 +427,20 @@ class SanityTab(MDBoxLayout):
                 color    = kind_colors.get(m.kind, T.PURPLE)
                 is_sel   = (m is prev)
 
-                dur_str = f"  |  {m.duration}" if m.duration else ""
-                item = ListItem(
-                    primary=name_txt,
-                    secondary=f"{m.kind_label}  |  {m.roll_range}{dur_str}",
-                    accent_hex=color,
-                    on_tap=lambda widget, entry=m: self._on_madness_tap(widget, entry))
+                card = ExpandingEffectCard(
+                    on_tap=lambda w, entry=m: self._on_madness_tap(w, entry))
+                card.title_text    = name_txt
+                card.subtitle_text = self._madness_summary(m.kind_label, m.roll_range, m.duration)
+                card.detail_body   = m.effect
+                card.accent_rgba   = list(T.k(color))
 
-                if is_sel:
-                    item.set_selected(True, persist=True)
-                    self._sel_mad_widget = item
-
-                self._madness_list_box.add_widget(item)
-                self._madness_items[idx] = item
-
-                kind_title = {
-                    "short": "SHORT-TERM INSANITY",
-                    "long": "LONG-TERM INSANITY",
-                    "indefinite": "INDEFINITE INSANITY"}.get(m.kind, "ACTIVE INSANITY")
-
-                detail = MDBoxLayout(
-                    orientation="vertical", size_hint_y=None, height=0, opacity=0,
-                    padding=[dp(0), dp(4), dp(0), dp(4)])
-                inner = DescriptionCard(title=kind_title, color_hex=color)
-                dur_detail = f"\nDuration: {m.duration}" if m.duration else ""
-                _desc = MDLabel(
-                    text=f"Roll: {m.roll_range} | {name_txt}{dur_detail}\n\n{m.effect}",
-                    theme_text_color="Custom", text_color=T.k(T.TEXT),
-                    font_style="Body2",
-                    size_hint_y=None, adaptive_height=True)
-                _desc.bind(width=lambda inst, val: setattr(inst, "text_size", (val, None)))
-                inner.add_widget(_desc)
-                detail.add_widget(inner)
-
-                self._madness_list_box.add_widget(detail)
-                self._madness_details[idx] = detail
+                self._madness_list_box.add_widget(card)
+                self._madness_items[idx] = card
 
                 # Restore expanded state if this was the selected entry
                 if is_sel:
-                    self._expand_panel(detail)
+                    card.set_open(True, animate=False)
+                    self._active_card = card
 
     def highlight_last_madness(self):
         """Flash the most recently added madness entry."""
@@ -428,10 +458,11 @@ class SanityTab(MDBoxLayout):
         app = self._app()
         for i, m in enumerate(app.state.madnesses):
             if m is entry:
-                item = self._madness_items.get(i)
-                if item:
-                    self._on_madness_tap(item, entry)
-                    item.flash()
+                card = self._madness_items.get(i)
+                if card:
+                    if self._active_card is not card:
+                        self._on_madness_tap(card, entry)
+                    card.flash()
                 return
 
     # ── Sanity input ───────────────────────────────────────────────────────────
@@ -518,15 +549,23 @@ class SanityTab(MDBoxLayout):
                 self._collapse_panel(d)
                 lbl.text = ""
                 pbtn._lbl.text = dtext
+                pbtn.reset_select_anim()
                 self._pending.pop(k, None)
 
-        self._pending[kind] = (roll, name, effect)
+        duration = roll_insanity_duration(kind)
+        self._pending[kind] = (roll, name, effect, duration)
 
         pair = self._add_preview.get(kind)
         if pair:
             detail, desc_lbl, pick_btn, _ = pair
-            desc_lbl.text = f"Roll: {roll} | {name}\n\n{effect}"
+            kind_label = {"short": "Short-Term", "long": "Long-Term",
+                          "indefinite": "Indefinite"}.get(kind, kind)
+            desc_lbl.text = (
+                f"{self._madness_summary(kind_label, roll, duration)}\n\n"
+                f"{effect}"
+            )
             pick_btn._lbl.text = f"{roll}. {name}"
+            pick_btn.play_select_anim()
             self._expand_panel(detail)
 
     def _apply_insanity(self, kind: str):
@@ -534,22 +573,23 @@ class SanityTab(MDBoxLayout):
         pending = self._pending.pop(kind, None)
         if not pending:
             return
-        roll, name, effect = pending
+        roll, name, effect, duration = pending
         pair = self._add_preview.get(kind)
         if pair:
             detail, desc_lbl, pick_btn, default_text = pair
             self._collapse_panel(detail)
             desc_lbl.text      = ""
             pick_btn._lbl.text = default_text
-        self._add_insanity_now(kind, roll, name, effect)
+            pick_btn.reset_select_anim()
+        self._add_insanity_now(kind, roll, name, effect, duration)
 
-    def _add_insanity_now(self, kind: str, roll: str, name: str, effect: str):
+    def _add_insanity_now(self, kind: str, roll: str, name: str, effect: str, duration: str):
         app = self._app()
         self._push_undo()
         entry = MadnessEntry(
             kind=kind, roll_range=roll, effect=effect, name=name,
             timestamp=datetime.now().strftime("%H:%M"),
-            duration=roll_insanity_duration(kind))
+            duration=duration)
         app.state.madnesses.append(entry)
         label = {"short": "Short-Term", "long": "Long-Term",
                  "indefinite": "Indefinite"}.get(kind, kind)
@@ -567,30 +607,21 @@ class SanityTab(MDBoxLayout):
 
     # ── Select active insanity entry ──────────────────────────────────────────
 
-    def _on_madness_tap(self, widget: ListItem, entry: MadnessEntry):
-        # Collapse previously selected panel
-        if self._sel_mad_widget and self._sel_mad_widget is not widget:
-            self._sel_mad_widget.set_selected(False, persist=False)
-            app = self._app()
-            for i, m in enumerate(app.state.madnesses):
-                if m is self._selected_madness:
-                    d = self._madness_details.get(i)
-                    if d:
-                        self._collapse_panel(d)
-                    break
+    def _on_madness_tap(self, card: ExpandingEffectCard, entry: MadnessEntry):
+        # Toggle: tapping the open card closes it
+        if self._active_card is card:
+            card.set_open(False)
+            self._active_card      = None
+            self._selected_madness = None
+            return
 
+        # Close the previously open card
+        if self._active_card:
+            self._active_card.set_open(False)
+
+        card.set_open(True)
+        self._active_card      = card
         self._selected_madness = entry
-        self._sel_mad_widget   = widget
-        widget.set_selected(True, persist=True)
-
-        # Expand this entry's detail panel
-        app = self._app()
-        for i, m in enumerate(app.state.madnesses):
-            if m is entry:
-                detail = self._madness_details.get(i)
-                if detail:
-                    self._expand_panel(detail)
-                break
 
     # ── Remove madness (header trash-can, same pattern as fear list) ───────────
 
@@ -602,14 +633,14 @@ class SanityTab(MDBoxLayout):
         m = self._selected_madness
         if m not in app.state.madnesses:
             self._selected_madness = None
-            self._sel_mad_widget   = None
+            self._active_card      = None
             return
         self._push_undo()
         name = m.name if m.name else m.kind_label
         app.state.madnesses.remove(m)
         self._log(f"Insanity removed: [{m.roll_range}] {name}")
         self._selected_madness = None
-        self._sel_mad_widget   = None
+        self._active_card      = None
         app.refresh_all()
         self._save()
 

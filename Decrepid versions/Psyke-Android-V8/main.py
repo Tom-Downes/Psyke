@@ -1,12 +1,3 @@
-"""
-Sanity, Fear & Madness Tracker — KivyMD Android App  (V2)
-Entry point: App class, global layout, header, sanity bar, madness banner.
-4-tab layout: Fears / Sanity / Wounds / Spells
-Back button cancels active encounters or dismisses dialogs.
-
-Run on desktop: python main.py
-Build for Android: buildozer android debug
-"""
 from __future__ import annotations
 
 import os

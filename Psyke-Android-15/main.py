@@ -50,7 +50,6 @@ from tab_sanity import SanityTab
 from tab_wounds import WoundsTab
 from tab_spells import SpellsTab
 from ui_utils import NotificationActionButton
-from splash_animation import build_launch_splash, _sync_launch_splash
 import theme as T
 
 # ── Unicode font — DejaVuSans ships with Kivy and covers arrows, symbols, etc.
@@ -1159,7 +1158,6 @@ class SFMApp(MDApp):
         self._sep_widget:  Widget | None = None
         self._root_layout: BoxLayout | None = None
         self._base_root_padding = [0, 0, 0, 0]
-        self._launch_splash: FloatLayout | None = None
         self._active_dialog: MDDialog | None = None
         self.wis_adv       = False   # Advantage on WIS saves (fear encounters)
         self.con_adv       = False   # Advantage on CON saves (wound encounters)
@@ -1245,8 +1243,6 @@ class SFMApp(MDApp):
 
         content.add_widget(self._sm)
         root.add_widget(content)
-        self._launch_splash = self._build_launch_splash()
-        root.add_widget(self._launch_splash)
 
         self.session_log = SessionLog()
         self._switch_tab("fears")
@@ -1257,37 +1253,6 @@ class SFMApp(MDApp):
         Window.bind(on_resize=lambda *_: self._apply_android_safe_top_padding())
 
         return root
-
-    def _build_launch_splash(self) -> FloatLayout:
-        self._splash_created_at = Clock.get_time()
-        return build_launch_splash("Loading character state...")
-
-    def _sync_launch_splash(self, splash: FloatLayout, *_):
-        _sync_launch_splash(splash)
-
-    def _dismiss_launch_splash(self, *_):
-        # Ensure the full crush-in + logo animation always completes (~1.08 s)
-        # before the splash fades out, regardless of how fast data loaded.
-        _ANIM_MIN_S = 1.30
-        elapsed = Clock.get_time() - getattr(self, "_splash_created_at", 0.0)
-        remaining = _ANIM_MIN_S - elapsed
-        if remaining > 0.02:
-            Clock.schedule_once(self._dismiss_launch_splash, remaining)
-            return
-
-        splash = self._launch_splash
-        if splash is None or splash.parent is None:
-            return
-        Animation.cancel_all(splash, "opacity")
-
-        def _remove(*_args):
-            if splash.parent is not None:
-                splash.parent.remove_widget(splash)
-            self._launch_splash = None
-
-        anim = Animation(opacity=0.0, duration=0.22, t="out_cubic")
-        anim.bind(on_complete=_remove)
-        anim.start(splash)
 
     def _android_top_inset_px(self) -> int:
         from kivy.utils import platform as _platform
@@ -1375,7 +1340,6 @@ class SFMApp(MDApp):
         data = self.save_manager.load()
         if not data:
             self.refresh_all()
-            Clock.schedule_once(self._dismiss_launch_splash, 0.20)
             return
         self.state.wis_score      = data.get("wis", 10)
         self.state.con_score      = data.get("con", 10)
@@ -1404,7 +1368,6 @@ class SFMApp(MDApp):
         if fear_enc_records:
             self._fears_tab._restore_enc_records(fear_enc_records)
         self.refresh_all()
-        Clock.schedule_once(self._dismiss_launch_splash, 0.20)
 
     # ── Global refresh ─────────────────────────────────────────────────────────
 

@@ -9,11 +9,11 @@ package.domain = org.fsm
 source.dir = .
 source.include_exts = py,png,jpg,kv,atlas
 icon.filename = %(source.dir)s/icon.png
-android.presplash_filename = %(source.dir)s/icon.png
-android.presplash_color = #111111
+android.presplash_lottie = %(source.dir)s/psyke_splash.json
+android.presplash_color = #10131a
 source.exclude_dirs = __pycache__, .git, tests, .venv, .venv_buildozer_inspect, .github, .claude, .push-worktree, .release_tmp, .release_tmp2
 
-version = 15.0.0
+version = 15.5.0
 
 # Android requires a monotonically increasing integer versionCode for updates.
 # GitHub Actions overwrites this per-run (see .github/workflows/build-apk.yml).

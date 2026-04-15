@@ -8,7 +8,7 @@ BUILD_INFO_PATH="${SCRIPT_DIR}/build_info.py"
 KEYSTORE_PATH="${SCRIPT_DIR}/psyke-upload.keystore"
 LOG_PATH="${SCRIPT_DIR}/buildozer-aab.log"
 OUT_DIR="${REPO_ROOT}/ABB"
-OUT_FILE="${OUT_DIR}/ABB-V7.aab"
+OUT_FILE="${OUT_DIR}/ABB-V5.aab"
 
 test -n "${ANDROID_KEYSTORE_BASE64:-}"
 test -n "${ANDROID_KEYSTORE_PASSWORD:-}"

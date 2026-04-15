@@ -1,43 +1,30 @@
-name: Build APK
+name: Build APK (Psyke V14)
 
 on:
   push:
-    branches: ["main"]
-    paths-ignore:
-      - "Psyke-Android-V1/**"
-      - "Psyke-Android-V4/**"
-      - "Psyke-Android-V5/**"
-      - "Psyke-Android-V6/**"
-      - "Psyke-Android-V7/**"
-      - "Psyke-Android-V8/**"
+    branches:
+      - main
+    paths:
+      - ".github/workflows/build-apk.yml"
+      - "Psyke-Android-14/**"
   workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 concurrency:
-  group: android-apk
+  group: android-apk-v14-debug
   cancel-in-progress: true
 
 jobs:
   build:
     runs-on: ubuntu-22.04
+    defaults:
+      run:
+        working-directory: Psyke-Android-14
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Resolve project dir
-        shell: bash
-        run: |
-          set -euo pipefail
-          SPEC_PATH="$(find . -maxdepth 4 -type f -name buildozer.spec | head -n 1 || true)"
-          if [ -z "$SPEC_PATH" ]; then
-            echo "No buildozer.spec found in repository"
-            exit 1
-          fi
-          PROJECT_DIR="$(dirname "$SPEC_PATH")"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          echo "Using PROJECT_DIR=$PROJECT_DIR"
 
       - uses: actions/setup-python@v5
         with:
@@ -67,7 +54,6 @@ jobs:
           pip install "Cython<3" pexpect "buildozer==1.5.0"
 
       - name: Stamp build metadata + bump versionCode
-        working-directory: ${{ env.PROJECT_DIR }}
         env:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
           GITHUB_SHA: ${{ github.sha }}
@@ -95,7 +81,7 @@ jobs:
             spec = re.sub(r"(?m)^android\\.numeric_version\\s*=\\s*\\d+\\s*$",
                           f"android.numeric_version = {numeric}", spec)
           else:
-            spec += f\"\\nandroid.numeric_version = {numeric}\\n\"
+            spec += f"\nandroid.numeric_version = {numeric}\n"
           spec_path.write_text(spec, encoding="utf-8")
 
           sha = os.environ.get("GITHUB_SHA", "")[:7] or "unknown"
@@ -113,14 +99,12 @@ jobs:
           PY
 
       - name: Build debug APK (capture log)
-        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           set -o pipefail
           buildozer -v android debug 2>&1 | tee buildozer.log
 
       - name: Show APK outputs
         if: always()
-        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           ls -la bin || true
           sha256sum bin/*.apk 2>/dev/null || true
@@ -129,12 +113,12 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-${{ github.run_number }}
-          path: ${{ env.PROJECT_DIR }}/buildozer.log
+          name: build-logs-v14-${{ github.run_number }}
+          path: Psyke-Android-14/buildozer.log
 
       - name: Upload APK
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: apk-${{ github.run_number }}
-          path: ${{ env.PROJECT_DIR }}/bin/*.apk
+          name: apk-v14-${{ github.run_number }}
+          path: Psyke-Android-14/bin/*.apk

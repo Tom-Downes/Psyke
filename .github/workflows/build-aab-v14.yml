@@ -1,16 +1,16 @@
-name: Build AAB (Psyke V11)
+name: Build AAB (Psyke V14)
 
 on:
   push:
     branches:
       - main
     paths:
-      - ".github/workflows/build-aab-v11.yml"
-      - "Psyke-Android-V11/**"
+      - ".github/workflows/build-aab-v14.yml"
+      - "Psyke-Android-14/**"
   workflow_dispatch:
     inputs:
       version:
-        description: "Optional version override (for example 11.0.1)"
+        description: "Optional version override (for example 14.0.1)"
         required: false
         default: ""
 
@@ -18,7 +18,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 concurrency:
-  group: android-aab-v11
+  group: android-aab-v14
   cancel-in-progress: true
 
 jobs:
@@ -58,7 +58,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install "Cython<3" pexpect "buildozer==1.5.0"
 
-      - name: Build AAB and stage ABB-V6
+      - name: Build AAB and stage ABB-V14
         env:
           INPUT_VERSION: ${{ github.event.inputs.version }}
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
@@ -67,37 +67,37 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: bash Psyke-Android-V11/build_aab_ci.sh
+        run: bash Psyke-Android-14/build_aab_ci.sh
 
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-aab-v11-${{ github.run_number }}
-          path: Psyke-Android-V11/buildozer-aab.log
+          name: build-logs-aab-v14-${{ github.run_number }}
+          path: Psyke-Android-14/buildozer-aab.log
 
       - name: Upload AAB artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: aab-v11-${{ github.run_number }}
-          path: ABB/ABB-V6.aab
+          name: aab-v14-${{ github.run_number }}
+          path: ABB/ABB-V14.aab
 
       - name: Verify committed AAB path exists
         if: success()
-        run: ls -lh ABB/ABB-V6.aab
+        run: ls -lh ABB/ABB-V14.aab
 
-      - name: Commit ABB-V6 back to main
+      - name: Commit ABB-V14 back to main
         if: success()
         run: |
-          git checkout -- Psyke-Android-V11/buildozer.spec
-          rm -f Psyke-Android-V11/build_info.py
+          git checkout -- Psyke-Android-14/buildozer.spec
+          rm -f Psyke-Android-14/build_info.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add ABB/ABB-V6.aab
+          git add ABB/ABB-V14.aab
           if git diff --cached --quiet; then
             echo "No ABB changes to commit."
             exit 0
           fi
-          git commit -m "build: update ABB-V6"
+          git commit -m "build: update ABB-V14"
           git push origin HEAD:main

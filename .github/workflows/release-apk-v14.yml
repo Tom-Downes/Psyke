@@ -1,18 +1,26 @@
-name: Release APK (Psyke V11)
+name: Release APK (Psyke V14)
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "APK version label (for example 11.0.0)"
+        description: "APK version label (for example 14.0.0)"
         required: false
-        default: "11.0.0"
+        default: "14.0.0"
+      release_tag:
+        description: "Git tag for the GitHub release"
+        required: false
+        default: "v14.0.0"
+      release_name:
+        description: "GitHub release title"
+        required: false
+        default: "Psyke v14"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 concurrency:
-  group: android-apk-v11
+  group: android-apk-v14
   cancel-in-progress: true
 
 jobs:
@@ -21,7 +29,7 @@ jobs:
 
     defaults:
       run:
-        working-directory: Psyke-Android-V11
+        working-directory: Psyke-Android-14
 
     permissions:
       contents: write
@@ -67,7 +75,7 @@ jobs:
         env:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
           GITHUB_SHA: ${{ github.sha }}
-          INPUT_VERSION: ${{ github.event.inputs.version || '11.0.0' }}
+          INPUT_VERSION: ${{ github.event.inputs.version || '14.0.0' }}
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
@@ -82,7 +90,7 @@ jobs:
           spec_path = Path("buildozer.spec")
           spec = spec_path.read_text(encoding="utf-8")
 
-          version = (os.environ.get("INPUT_VERSION") or "").strip() or "11.0.0"
+          version = (os.environ.get("INPUT_VERSION") or "").strip() or "14.0.0"
           run_no = int(os.environ.get("GITHUB_RUN_NUMBER", "0") or "0")
           numeric = int(dt.datetime.now(dt.timezone.utc).timestamp())
 
@@ -120,38 +128,55 @@ jobs:
       - name: Build APK
         run: |
           set -o pipefail
-          buildozer -v android debug 2>&1 | tee buildozer-apk.log
+          buildozer -v android release 2>&1 | tee buildozer-apk.log
 
       - name: Rename APK for release upload
         shell: bash
         env:
-          INPUT_VERSION: ${{ github.event.inputs.version || '11.0.0' }}
+          INPUT_VERSION: ${{ github.event.inputs.version || '14.0.0' }}
         run: |
           APK_PATH="$(find bin -maxdepth 1 -type f -name '*.apk' | head -n 1)"
           test -n "$APK_PATH"
-          RELEASE_APK="Psyke-Android-V11-${INPUT_VERSION}.apk"
+          RELEASE_APK="Psyke-Android-14-${INPUT_VERSION}.apk"
           cp "$APK_PATH" "$RELEASE_APK"
           echo "RELEASE_APK=$RELEASE_APK" >> "$GITHUB_ENV"
+
+      - name: Ensure GitHub release exists
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_RELEASE_TAG: ${{ github.event.inputs.release_tag || 'v14.0.0' }}
+          INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name || 'Psyke v14' }}
+        run: |
+          if gh release view "$INPUT_RELEASE_TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            gh release edit "$INPUT_RELEASE_TAG" \
+              --title "$INPUT_RELEASE_NAME" \
+              --repo "${{ github.repository }}"
+          else
+            gh release create "$INPUT_RELEASE_TAG" \
+              --title "$INPUT_RELEASE_NAME" \
+              --notes "Automated release build for Psyke v14." \
+              --repo "${{ github.repository }}"
+          fi
 
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-apk-v11-${{ github.run_number }}
-          path: Psyke-Android-V11/buildozer-apk.log
+          name: build-logs-apk-v14-${{ github.run_number }}
+          path: Psyke-Android-14/buildozer-apk.log
 
       - name: Upload APK artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: apk-v11-${{ github.run_number }}
-          path: Psyke-Android-V11/${{ env.RELEASE_APK }}
+          name: apk-v14-${{ github.run_number }}
+          path: Psyke-Android-14/${{ env.RELEASE_APK }}
 
-      - name: Upload APK to latest GitHub release
+      - name: Upload APK to GitHub release
         if: success()
         env:
           GH_TOKEN: ${{ github.token }}
+          INPUT_RELEASE_TAG: ${{ github.event.inputs.release_tag || 'v14.0.0' }}
         run: |
-          LATEST_TAG="$(gh api repos/${{ github.repository }}/releases/latest --jq .tag_name)"
-          test -n "$LATEST_TAG"
-          gh release upload "$LATEST_TAG" "$RELEASE_APK" --clobber --repo "${{ github.repository }}"
+          gh release upload "$INPUT_RELEASE_TAG" "$RELEASE_APK" --clobber --repo "${{ github.repository }}"

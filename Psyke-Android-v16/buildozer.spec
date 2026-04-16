@@ -40,6 +40,10 @@ android.manifest.activity_attributes = android:windowSoftInputMode=adjustResize
 # Permissions (none required for local JSON save)
 # android.permissions = WRITE_EXTERNAL_STORAGE
 
+# Hook: patches p4a lottie.xml template to set lottie_loop=false
+# so splash intro plays once then spinner runs until app loads
+p4a.hook = %(source.dir)s/p4a_hook.py
+
 [buildozer]
 log_level = 2
 warn_on_root = 1

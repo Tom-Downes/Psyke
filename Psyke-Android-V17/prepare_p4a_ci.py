@@ -93,7 +93,7 @@ def patch_sdl_page_size_support(p4a_dir: Path) -> None:
         p4a_dir
         / "pythonforandroid"
         / "bootstraps"
-        / "_sdl_common"
+        / "sdl2"
         / "build"
         / "jni"
         / "Application.mk"

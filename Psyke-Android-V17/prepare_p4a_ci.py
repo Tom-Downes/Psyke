@@ -90,9 +90,12 @@ def patch_lottie(p4a_dir: Path) -> None:
 
 def patch_recipe_py_ldflags(p4a_dir: Path) -> None:
     """Inject -Wl,-z,max-page-size=16384 into all recipe envs (covers
-    autotools builds: Python3, OpenSSL, libffi, SQLite3, etc.)."""
+    autotools builds: Python3, OpenSSL, libffi, etc.) and into all
+    NDKRecipe ndk-build calls (covers SQLite3 and other NDK recipes)."""
     recipe_py = p4a_dir / "pythonforandroid" / "recipe.py"
-    old = (
+
+    # Patch 1: LDFLAGS in env — autotools/configure-based recipes.
+    old_env = (
         "    def get_recipe_env(self, arch=None, with_flags_in_cc=True):\n"
         '        """Return the env specialized for the recipe\n'
         '        """\n'
@@ -101,7 +104,7 @@ def patch_recipe_py_ldflags(p4a_dir: Path) -> None:
         "        env = arch.get_env(with_flags_in_cc=with_flags_in_cc)\n"
         "        return env\n"
     )
-    new = (
+    new_env = (
         "    def get_recipe_env(self, arch=None, with_flags_in_cc=True):\n"
         '        """Return the env specialized for the recipe\n'
         '        """\n'
@@ -111,7 +114,43 @@ def patch_recipe_py_ldflags(p4a_dir: Path) -> None:
         "        env['LDFLAGS'] = env.get('LDFLAGS', '') + ' -Wl,-z,max-page-size=16384'\n"
         "        return env\n"
     )
-    replace_once(recipe_py, old, new, "recipe.py LDFLAGS 16KB")
+    replace_once(recipe_py, old_env, new_env, "recipe.py LDFLAGS 16KB")
+
+    # Patch 2: APP_LDFLAGS in NDKRecipe.build_arch — ndk-build based recipes
+    # (SQLite3, libffi via ndk, etc.). APP_LDFLAGS is the correct ndk-build var.
+    old_ndk = (
+        "    def build_arch(self, arch, *extra_args):\n"
+        "        super().build_arch(arch)\n"
+        "\n"
+        "        env = self.get_recipe_env(arch)\n"
+        "        with current_directory(self.get_build_dir(arch.arch)):\n"
+        "            shprint(\n"
+        "                sh.Command(join(self.ctx.ndk_dir, \"ndk-build\")),\n"
+        "                'V=1',\n"
+        "                'NDK_DEBUG=' + (\"1\" if self.ctx.build_as_debuggable else \"0\"),\n"
+        "                'APP_PLATFORM=android-' + str(self.ctx.ndk_api),\n"
+        "                'APP_ABI=' + arch.arch,\n"
+        "                *extra_args, _env=env\n"
+        "            )\n"
+    )
+    new_ndk = (
+        "    def build_arch(self, arch, *extra_args):\n"
+        "        super().build_arch(arch)\n"
+        "\n"
+        "        env = self.get_recipe_env(arch)\n"
+        "        with current_directory(self.get_build_dir(arch.arch)):\n"
+        "            shprint(\n"
+        "                sh.Command(join(self.ctx.ndk_dir, \"ndk-build\")),\n"
+        "                'V=1',\n"
+        "                'NDK_DEBUG=' + (\"1\" if self.ctx.build_as_debuggable else \"0\"),\n"
+        "                'APP_PLATFORM=android-' + str(self.ctx.ndk_api),\n"
+        "                'APP_ABI=' + arch.arch,\n"
+        "                'APP_SUPPORT_FLEXIBLE_PAGE_SIZES=true',\n"
+        "                'APP_LDFLAGS=-Wl,-z,max-page-size=16384',\n"
+        "                *extra_args, _env=env\n"
+        "            )\n"
+    )
+    replace_once(recipe_py, old_ndk, new_ndk, "NDKRecipe.build_arch APP_LDFLAGS 16KB")
 
 
 def patch_sdl_page_size_support(p4a_dir: Path) -> None:

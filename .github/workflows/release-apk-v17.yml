@@ -37,7 +37,7 @@ jobs:
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.14"
 
       - uses: actions/setup-java@v4
         with:
@@ -59,7 +59,8 @@ jobs:
       - name: Install buildozer
         run: |
           python -m pip install --upgrade pip
-          pip install "Cython<3" pexpect "buildozer==1.5.0" python-for-android
+          pip install git+https://github.com/kivy/buildozer
+          pip install legacy-cgi setuptools "Cython<3" pexpect
 
       - name: Decode keystore
         env:
@@ -97,30 +98,6 @@ jobs:
           spec = upsert(spec, "android.keyalias_passwd", os.environ["KEY_PASSWORD"])
           Path("buildozer.spec").write_text(spec, encoding="utf-8")
           print(f"Stamped version={version} numeric={numeric}")
-          PY
-
-      - name: Patch lottie template defensively
-        run: |
-          LOTTIE=$(python -c "import pythonforandroid, os; print(os.path.join(os.path.dirname(pythonforandroid.__file__), 'bootstraps/common/build/templates/lottie.xml'))")
-          python - "$LOTTIE" <<'PY'
-          import sys
-          from pathlib import Path
-
-          path = Path(sys.argv[1])
-          content = path.read_text(encoding="utf-8")
-          content = content.replace('lottie_loop="true"', 'lottie_loop="false"')
-          if 'lottie_clipToCompositionBounds' not in content:
-              content = content.replace(
-                  'app:lottie_loop="false"',
-                  'app:lottie_loop="false"\n        app:lottie_clipToCompositionBounds="false"'
-              )
-          if 'clipChildren' not in content:
-              content = content.replace(
-                  'android:layout_height="fill_parent"',
-                  'android:layout_height="fill_parent"\n    android:clipChildren="false"'
-              )
-          path.write_text(content, encoding="utf-8")
-          print(f"Patched {path}")
           PY
 
       - name: Build APK

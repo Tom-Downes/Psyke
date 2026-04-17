@@ -25,6 +25,8 @@ android.minapi = 26
 android.ndk_api = 26
 # Build with a modern NDK so native libs default to 16 KB page-size support.
 android.ndk = 29
+# Use the current p4a branch for modern Play/NDK compatibility fixes.
+p4a.branch = develop
 android.archs = arm64-v8a,armeabi-v7a
 android.accept_sdk_license = True
 android.release_artifact = apk

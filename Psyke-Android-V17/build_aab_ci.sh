@@ -75,9 +75,6 @@ PY
 
 cd "${SCRIPT_DIR}"
 
-LOTTIE="$(python -c "import pythonforandroid, os; print(os.path.join(os.path.dirname(pythonforandroid.__file__), 'bootstraps/common/build/templates/lottie.xml'))")"
-sed -i 's/lottie_loop="true"/lottie_loop="false"/g' "${LOTTIE}"
-
 buildozer -v android release 2>&1 | tee "${LOG_PATH}"
 
 mkdir -p "${OUT_DIR}"

@@ -14,8 +14,10 @@ android.presplash_color = #10131a
 version = 17.5.0
 android.numeric_version = 170500
 
-# android listed first so p4a picks up Android-specific bindings
-requirements = python3,android,kivy==2.3.0,kivymd==1.2.0,plyer,pyjnius
+# Keep the Android recipe ahead of the UI deps so p4a resolves the
+# Android-specific bindings correctly. Pin both Python recipes so
+# p4a develop doesn't silently jump to 3.14, which broke pyjnius in CI.
+requirements = python3==3.12.13,hostpython3==3.12.13,android,kivy==2.3.0,kivymd==1.2.0,plyer,pyjnius
 
 orientation = portrait
 fullscreen = 0

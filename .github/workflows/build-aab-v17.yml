@@ -1,24 +1,18 @@
-name: Build AAB (Psyke V16)
+name: Build AAB (Psyke V17)
 
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - ".github/workflows/build-aab-v14.yml"
-      - "Psyke-Android-v16/**"
   workflow_dispatch:
     inputs:
       version:
-        description: "Optional version override (for example 16.0.1)"
+        description: "Optional version override (for example 17.5.0)"
         required: false
-        default: ""
+        default: "17.5.0"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 concurrency:
-  group: android-aab-v16
+  group: android-aab-v17
   cancel-in-progress: true
 
 jobs:
@@ -56,9 +50,9 @@ jobs:
       - name: Install buildozer
         run: |
           python -m pip install --upgrade pip
-          pip install "Cython<3" pexpect "buildozer==1.5.0"
+          pip install "Cython<3" pexpect "buildozer==1.5.0" python-for-android
 
-      - name: Build AAB and stage ABB-V17
+      - name: Build AAB and stage ABB-17.5
         env:
           INPUT_VERSION: ${{ github.event.inputs.version }}
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
@@ -67,37 +61,37 @@ jobs:
           ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: bash Psyke-Android-v16/build_aab_ci.sh
+        run: bash Psyke-Android-V17/build_aab_ci.sh
 
       - name: Upload build log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-aab-v16-${{ github.run_number }}
-          path: Psyke-Android-v16/buildozer-aab.log
+          name: build-logs-aab-v17-${{ github.run_number }}
+          path: Psyke-Android-V17/buildozer-aab.log
 
       - name: Upload AAB artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: aab-v16-${{ github.run_number }}
-          path: ABB/ABB-V17.aab
+          name: aab-v17-${{ github.run_number }}
+          path: ABB/ABB-17.5.aab
 
       - name: Verify committed AAB path exists
         if: success()
-        run: ls -lh ABB/ABB-V17.aab
+        run: ls -lh ABB/ABB-17.5.aab
 
-      - name: Commit ABB-V17 back to main
+      - name: Commit ABB-17.5 back to main
         if: success()
         run: |
-          git checkout -- Psyke-Android-v16/buildozer.spec
-          rm -f Psyke-Android-v16/build_info.py
+          git checkout -- Psyke-Android-V17/buildozer.spec
+          rm -f Psyke-Android-V17/build_info.py
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add ABB/ABB-V17.aab
+          git add ABB/ABB-17.5.aab
           if git diff --cached --quiet; then
             echo "No ABB changes to commit."
             exit 0
           fi
-          git commit -m "build: update ABB-V17"
+          git commit -m "build: update ABB-17.5 [skip ci]"
           git push origin HEAD:main

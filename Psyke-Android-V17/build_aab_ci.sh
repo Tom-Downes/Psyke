@@ -20,7 +20,7 @@ printf '%s' "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > "${KEYSTORE_PATH}"
 
 # Build recipes with 16 KB ELF page alignment for Android 15+/Play compliance.
 export LDFLAGS="${LDFLAGS:-} -Wl,-z,max-page-size=16384"
-python "${SCRIPT_DIR}/prepare_p4a_ci.py" --source-dir "${P4A_SOURCE_DIR}"
+python "${SCRIPT_DIR}/prepare_p4a_ci.py" --source-dir "${P4A_SOURCE_DIR}" --branch master
 
 export SPEC_PATH BUILD_INFO_PATH KEYSTORE_PATH P4A_SOURCE_DIR
 python - <<'PY'

@@ -17,7 +17,7 @@ android.numeric_version = 170500
 # Keep the Android recipe ahead of the UI deps so p4a resolves the
 # Android-specific bindings correctly. Pin both Python recipes so
 # p4a develop doesn't silently jump to 3.14, which broke pyjnius in CI.
-requirements = python3==3.12.13,hostpython3==3.12.13,android,kivy==2.3.0,kivymd==1.2.0,plyer,pyjnius
+requirements = python3,android,kivy==2.3.0,kivymd==1.2.0,plyer,pyjnius
 
 orientation = portrait
 fullscreen = 0
@@ -25,10 +25,6 @@ fullscreen = 0
 android.api = 35
 android.minapi = 26
 android.ndk_api = 26
-# Build with a modern NDK so native libs default to 16 KB page-size support.
-android.ndk = 29
-# Use the current p4a branch for modern Play/NDK compatibility fixes.
-p4a.branch = develop
 # CI can override this to a patched local python-for-android checkout.
 p4a.source_dir =
 android.archs = arm64-v8a,armeabi-v7a

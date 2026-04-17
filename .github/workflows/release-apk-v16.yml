@@ -106,20 +106,6 @@ jobs:
           set -o pipefail
           buildozer -v android release 2>&1 | tee build.log
 
-      - name: Patch lottie loop (pip p4a copy)
-        run: |
-          LOTTIE=$(python -c "
-          import pythonforandroid, os
-          print(os.path.join(os.path.dirname(pythonforandroid.__file__),
-            'bootstraps/common/build/templates/lottie.xml'))
-          ")
-          if [ -f "$LOTTIE" ]; then
-            sed -i 's/lottie_loop="true"/lottie_loop="false"/g' "$LOTTIE"
-            echo "Patched pip p4a copy: $LOTTIE"
-          else
-            echo "Not found: $LOTTIE"
-          fi
-
       - name: Find APK
         run: |
           APK=$(find bin -name "*.apk" | head -1)

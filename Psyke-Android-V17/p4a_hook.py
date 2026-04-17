@@ -85,13 +85,82 @@ def _patch_lottie(buildozer):
         print("[p4a_hook] WARNING: no patches applied to any target file")
 
 
+def _patch_pyproject_recipes(buildozer):
+    try:
+        app_dir = buildozer.root_dir
+    except Exception:
+        app_dir = os.getcwd()
+
+    recipe_fixes = [
+        (
+            os.path.join(
+                app_dir,
+                ".buildozer", "android", "platform", "python-for-android",
+                "pythonforandroid", "recipes", "pyjnius", "__init__.py",
+            ),
+            "class PyjniusRecipe(PyProjectRecipe):",
+            'hostpython_prerequisites = ["Cython<3.2"]',
+            'hostpython_prerequisites = ["Cython<3.2", "wheel"]',
+        ),
+        (
+            os.path.join(
+                app_dir,
+                ".buildozer", "android", "platform", "python-for-android",
+                "pythonforandroid", "recipes", "kivy", "__init__.py",
+            ),
+            "class KivyRecipe(PyProjectRecipe):",
+            'hostpython_prerequisites = ["cython>=0.29.1,<=3.0.12"]',
+            'hostpython_prerequisites = ["cython>=0.29.1,<=3.0.12", "wheel"]',
+        ),
+    ]
+
+    for path, class_marker, prereq_old, prereq_new in recipe_fixes:
+        if not os.path.exists(path):
+            print(f"[p4a_hook] Recipe patch target not found (skipping): {path}")
+            continue
+
+        try:
+            with open(path, encoding="utf-8") as f:
+                content = f.read()
+
+            changed = False
+
+            if "--no-isolation" not in content and class_marker in content:
+                content = content.replace(
+                    class_marker,
+                    class_marker + "\n    extra_build_args = ['--no-isolation']",
+                    1,
+                )
+                print(f"[p4a_hook] Enabled --no-isolation for recipe: {path}")
+                changed = True
+            else:
+                print(f"[p4a_hook] --no-isolation already present or class missing in: {path}")
+
+            if '"wheel"' not in content and prereq_old in content:
+                content = content.replace(prereq_old, prereq_new, 1)
+                print(f"[p4a_hook] Added wheel to hostpython prerequisites: {path}")
+                changed = True
+            else:
+                print(f"[p4a_hook] wheel already present or prerequisites not found in: {path}")
+
+            if changed:
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(content)
+
+        except Exception as e:
+            print(f"[p4a_hook] Error patching recipe {path}: {e}")
+
+
 def pre_build(buildozer):
+    _patch_pyproject_recipes(buildozer)
     _patch_lottie(buildozer)
 
 
 def before_apk_build(buildozer):
+    _patch_pyproject_recipes(buildozer)
     _patch_lottie(buildozer)
 
 
 def before_aab_build(buildozer):
+    _patch_pyproject_recipes(buildozer)
     _patch_lottie(buildozer)

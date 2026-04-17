@@ -72,6 +72,7 @@ def clone_p4a(dest: Path, branch: str) -> None:
 
 def patch_pyproject_recipes(p4a_dir: Path) -> None:
     pyjnius = p4a_dir / "pythonforandroid" / "recipes" / "pyjnius" / "__init__.py"
+    android = p4a_dir / "pythonforandroid" / "recipes" / "android" / "__init__.py"
     kivy = p4a_dir / "pythonforandroid" / "recipes" / "kivy" / "__init__.py"
 
     insert_after(
@@ -85,6 +86,19 @@ def patch_pyproject_recipes(p4a_dir: Path) -> None:
         '    hostpython_prerequisites = ["Cython<3.2"]\n',
         '    hostpython_prerequisites = ["Cython<3.2", "wheel"]\n',
         "pyjnius hostpython prerequisites",
+    )
+
+    insert_after(
+        android,
+        "class AndroidRecipe(IncludedFilesBehaviour, PyProjectRecipe):\n",
+        "    extra_build_args = ['--no-isolation']\n",
+        "android no-isolation",
+    )
+    replace_once(
+        android,
+        '    hostpython_prerequisites = ["Cython>=0.29,<3.1"]\n',
+        '    hostpython_prerequisites = ["Cython>=0.29,<3.1", "wheel"]\n',
+        "android hostpython prerequisites",
     )
 
     insert_after(

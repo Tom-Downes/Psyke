@@ -96,10 +96,12 @@ jobs:
           print(f"Stamped version={version} numeric={numeric}")
           PY
 
-      - name: Patch lottie loop
+      - name: Patch lottie loop and clipping
         run: |
           LOTTIE=$(python -c "import pythonforandroid, os; print(os.path.join(os.path.dirname(pythonforandroid.__file__), 'bootstraps/common/build/templates/lottie.xml'))")
           sed -i 's/lottie_loop="true"/lottie_loop="false"/g' "$LOTTIE"
+          grep -q 'lottie_clipToCompositionBounds' "$LOTTIE" || \
+            sed -i 's/lottie_loop="false"/lottie_loop="false"\n        app:lottie_clipToCompositionBounds="false"/' "$LOTTIE"
           echo "Patched: $LOTTIE"
 
       - name: Build APK

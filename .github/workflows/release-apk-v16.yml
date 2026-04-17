@@ -57,7 +57,7 @@ jobs:
             libgl1-mesa-dev libgles2-mesa-dev
 
       - name: Install buildozer
-        run: pip install --upgrade pip && pip install "Cython<3" pexpect "buildozer==1.5.0"
+        run: pip install --upgrade pip && pip install "Cython<3" pexpect "buildozer==1.5.0" python-for-android
 
       - name: Decode keystore
         env:
